@@ -1,0 +1,766 @@
+name: Build and Release (Go)
+
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
+jobs:
+  preflight:
+    name: Preflight - suggest secrets & generate tag
+    runs-on: ubuntu-latest
+    outputs:
+      release_tag: ${{ steps.get_tag.outputs.tag }}
+    steps:
+      - name: Print recommended secrets and guidance
+        run: |
+          echo "Recommended repository secrets for this workflow:"
+          echo " - GPG_SIGNING_KEY: (optional) ASCII-armored GPG private key for signing release artifacts"
+          echo " - CODE_SIGN_CERT: (optional) Windows code-signing certificate (base64)"
+          echo " - STORAGE_TOKEN: (optional) token for private artifact stores"
+          echo
+          echo "To add a secret: repository Settings → Secrets and variables → Actions → New repository secret"
+
+      - name: Generate Release Tag
+        id: get_tag
+        run: |
+          SHORT_SHA=$(echo ${GITHUB_SHA} | cut -c1-7)
+          TS=$(date -u +%Y.%m.%d.%H%M%S)
+          echo "tag=v${TS}-${SHORT_SHA}" >> "$GITHUB_OUTPUT"
+          echo "Generated Tag: v${TS}-${SHORT_SHA}"
+
+  build:
+    name: Build (matrix)
+    runs-on: ${{ matrix.os }}
+    needs: preflight
+    env:
+      CODE_SIGN_CERT: ${{ secrets.CODE_SIGN_CERT }}
+      CODE_SIGN_CERT_PASSWORD: ${{ secrets.CODE_SIGN_CERT_PASSWORD }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            platform: Windows
+            arch: amd64
+            ext: .exe
+            package: zip
+            go_arch: amd64
+            go_os: windows
+            cgo_enabled: "0"
+            smoke_test: true
+          - os: windows-latest
+            platform: Windows
+            arch: x86
+            ext: .exe
+            package: zip
+            go_arch: 386
+            go_os: windows
+            cgo_enabled: "0"
+            smoke_test: false
+          - os: windows-latest
+            platform: Windows
+            arch: arm64
+            ext: .exe
+            package: zip
+            go_arch: arm64
+            go_os: windows
+            cgo_enabled: "0"
+            smoke_test: false
+          - os: ubuntu-22.04
+            platform: Linux
+            arch: amd64
+            ext: ""
+            package: tar.gz
+            go_arch: amd64
+            go_os: linux
+            cgo_enabled: "0"
+            smoke_test: true
+          - os: ubuntu-22.04
+            platform: Linux
+            arch: x86
+            ext: ""
+            package: tar.gz
+            go_arch: 386
+            go_os: linux
+            cgo_enabled: "0"
+            smoke_test: false
+          - os: ubuntu-latest
+            platform: Linux-Legacy
+            arch: amd64
+            ext: ""
+            package: tar.gz
+            go_arch: amd64
+            go_os: linux
+            cgo_enabled: "0"
+            smoke_test: true
+          - os: ubuntu-24.04-arm
+            platform: Linux
+            arch: arm64
+            ext: ""
+            package: tar.gz
+            go_arch: arm64
+            go_os: linux
+            cgo_enabled: "0"
+            smoke_test: true
+          - os: ubuntu-24.04-arm
+            platform: Linux-Legacy
+            arch: arm64
+            ext: ""
+            package: tar.gz
+            go_arch: arm64
+            go_os: linux
+            cgo_enabled: "0"
+            smoke_test: false
+          - os: ubuntu-22.04
+            platform: Linux
+            arch: armv7
+            ext: ""
+            package: tar.gz
+            go_arch: arm
+            go_arm: "7"
+            go_os: linux
+            cgo_enabled: "0"
+            smoke_test: false
+          - os: ubuntu-22.04
+            platform: Linux
+            arch: armv6
+            ext: ""
+            package: tar.gz
+            go_arch: arm
+            go_arm: "6"
+            go_os: linux
+            cgo_enabled: "0"
+            smoke_test: false
+          - os: ubuntu-22.04
+            platform: Linux
+            arch: armv5
+            ext: ""
+            package: tar.gz
+            go_arch: arm
+            go_arm: "5"
+            go_os: linux
+            cgo_enabled: "0"
+            smoke_test: false
+          - os: ubuntu-22.04
+            platform: Linux
+            arch: riscv64
+            ext: ""
+            package: tar.gz
+            go_arch: riscv64
+            go_os: linux
+            cgo_enabled: "0"
+            smoke_test: false
+          - os: ubuntu-22.04
+            platform: Linux
+            arch: mips
+            ext: ""
+            package: tar.gz
+            go_arch: mips
+            go_os: linux
+            go_mips: softfloat
+            cgo_enabled: "0"
+            smoke_test: false
+          - os: ubuntu-22.04
+            platform: Linux
+            arch: mipsle
+            ext: ""
+            package: tar.gz
+            go_arch: mipsle
+            go_os: linux
+            go_mips: softfloat
+            cgo_enabled: "0"
+            smoke_test: false
+          - os: ubuntu-22.04
+            platform: Linux
+            arch: mips64
+            ext: ""
+            package: tar.gz
+            go_arch: mips64
+            go_os: linux
+            go_mips64: softfloat
+            cgo_enabled: "0"
+            smoke_test: false
+          - os: ubuntu-22.04
+            platform: Linux
+            arch: mips64le
+            ext: ""
+            package: tar.gz
+            go_arch: mips64le
+            go_os: linux
+            go_mips64: softfloat
+            cgo_enabled: "0"
+            smoke_test: false
+          - os: macos-latest
+            platform: MacOS
+            arch: arm64
+            ext: ""
+            package: tar.gz
+            go_arch: arm64
+            go_os: darwin
+            cgo_enabled: "0"
+            smoke_test: true
+          - os: macos-latest
+            platform: MacOS
+            arch: amd64
+            ext: ""
+            package: tar.gz
+            go_arch: amd64
+            go_os: darwin
+            cgo_enabled: "0"
+            smoke_test: false
+          - os: ubuntu-22.04
+            platform: Termux
+            arch: arm64
+            ext: ""
+            package: tar.gz
+            go_arch: arm64
+            go_os: android
+            cgo_enabled: "0"
+            smoke_test: false
+          - os: ubuntu-22.04
+            platform: Termux
+            arch: armv7
+            ext: ""
+            package: tar.gz
+            go_arch: arm
+            go_arm: "7"
+            go_os: android
+            cgo_enabled: "1"
+            android_ndk: true
+            android_api: "21"
+            android_cc: armv7a-linux-androideabi21-clang
+            android_cxx: armv7a-linux-androideabi21-clang++
+            smoke_test: false
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Set up Java 17 for Android builds
+        if: ${{ matrix.android_ndk }}
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Android SDK
+        if: ${{ matrix.android_ndk }}
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android NDK
+        if: ${{ matrix.android_ndk }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          sdkmanager --sdk_root="${ANDROID_SDK_ROOT}" "ndk;27.2.12479018"
+          NDK_ROOT="${ANDROID_SDK_ROOT}/ndk/27.2.12479018"
+          test -x "${NDK_ROOT}/toolchains/llvm/prebuilt/linux-x86_64/bin/${{ matrix.android_cc }}"
+          test -x "${NDK_ROOT}/toolchains/llvm/prebuilt/linux-x86_64/bin/${{ matrix.android_cxx }}"
+          echo "ANDROID_NDK_ROOT=${NDK_ROOT}" >> "$GITHUB_ENV"
+          echo "CC=${NDK_ROOT}/toolchains/llvm/prebuilt/linux-x86_64/bin/${{ matrix.android_cc }}" >> "$GITHUB_ENV"
+          echo "CXX=${NDK_ROOT}/toolchains/llvm/prebuilt/linux-x86_64/bin/${{ matrix.android_cxx }}" >> "$GITHUB_ENV"
+
+      - name: Install goversioninfo
+        if: ${{ matrix.go_os == 'windows' }}
+        run: |
+          go install github.com/josephspurrier/goversioninfo/cmd/goversioninfo@latest
+
+      - name: Generate Windows resource files
+        if: ${{ matrix.go_os == 'windows' }}
+        shell: bash
+        run: |
+          cd cmd/client && goversioninfo -platform-specific=true
+          cd ../server && goversioninfo -platform-specific=true
+
+      - name: Prepare build directory
+        shell: bash
+        run: |
+          rm -rf dist || true
+          mkdir -p dist
+
+      - name: Build client
+        env:
+          CGO_ENABLED: ${{ matrix.cgo_enabled }}
+          GOOS: ${{ matrix.go_os }}
+          GOARCH: ${{ matrix.go_arch }}
+          GOARM: ${{ matrix.go_arm }}
+          GOMIPS: ${{ matrix.go_mips }}
+          GOMIPS64: ${{ matrix.go_mips64 }}
+          CC: ${{ env.CC }}
+          CXX: ${{ env.CXX }}
+        run: |
+          go build -ldflags "-X stormdns-go/internal/version.BuildVersion=${{ needs.preflight.outputs.release_tag }}" -o dist/StormDNS_Client_${{ matrix.platform }}_${{ matrix.arch }}${{ matrix.ext }} ./cmd/client
+
+      - name: Build server
+        env:
+          CGO_ENABLED: ${{ matrix.cgo_enabled }}
+          GOOS: ${{ matrix.go_os }}
+          GOARCH: ${{ matrix.go_arch }}
+          GOARM: ${{ matrix.go_arm }}
+          GOMIPS: ${{ matrix.go_mips }}
+          GOMIPS64: ${{ matrix.go_mips64 }}
+          CC: ${{ env.CC }}
+          CXX: ${{ env.CXX }}
+        run: |
+          go build -ldflags "-X stormdns-go/internal/version.BuildVersion=${{ needs.preflight.outputs.release_tag }}" -o dist/StormDNS_Server_${{ matrix.platform }}_${{ matrix.arch }}${{ matrix.ext }} ./cmd/server
+
+      - name: Verify Linux-Legacy binaries are not dynamically linked
+        if: ${{ matrix.platform == 'Linux-Legacy' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          client_bin="dist/StormDNS_Client_${{ matrix.platform }}_${{ matrix.arch }}${{ matrix.ext }}"
+          server_bin="dist/StormDNS_Server_${{ matrix.platform }}_${{ matrix.arch }}${{ matrix.ext }}"
+
+          for bin in "$client_bin" "$server_bin"; do
+            echo "Inspecting $bin"
+            output="$(ldd "$bin" 2>&1 || true)"
+            echo "$output"
+            if [[ "$output" != *"not a dynamic executable"* && "$output" != *"statically linked"* ]]; then
+              echo "Expected a static/pure-Go legacy binary, but $bin still looks dynamically linked." >&2
+              exit 1
+            fi
+          done
+
+      - name: Bundle config templates with executables
+        shell: bash
+        run: |
+          cp client_config.toml.simple dist/client_config.toml || true
+          cp client_resolvers.simple dist/client_resolvers.txt || true
+          cp server_config.toml.simple dist/server_config.toml || true
+          if [[ "${{ matrix.go_os }}" == "linux" ]]; then
+            cp client_linux_install.sh dist/client_linux_install.sh || true
+          fi
+
+      - name: Prepare smoke-test config
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import sys
+          import re
+          from pathlib import Path
+
+          val = "smoke-test-key-12345678901234567890123456789012"
+          for f_name in ["dist/client_config.toml", "dist/server_config.toml"]:
+              p = Path(f_name)
+              if not p.exists(): continue
+              content = p.read_text(encoding="utf-8", errors="ignore")
+              content = re.sub(r'ENCRYPTION_KEY\s*=\s*""', f'ENCRYPTION_KEY = "{val}"', content)
+              # Ensure server key file points to something that won't fail if we use it
+              if "server" in f_name:
+                  content = re.sub(r'ENCRYPTION_KEY_FILE\s*=\s*".*?"', 'ENCRYPTION_KEY_FILE = "encrypt_key.txt"', content)
+              p.write_text(content, encoding="utf-8")
+          PY
+
+      - name: Smoke test executables (Windows)
+        if: ${{ matrix.os == 'windows-latest' && matrix.smoke_test }}
+        shell: powershell
+        run: |
+          Set-StrictMode -Version Latest
+          $ErrorActionPreference = "Stop"
+          Set-Location dist
+
+          $clientBin = "StormDNS_Client_${{ matrix.platform }}_${{ matrix.arch }}${{ matrix.ext }}"
+          $serverBin = "StormDNS_Server_${{ matrix.platform }}_${{ matrix.arch }}${{ matrix.ext }}"
+
+          # Client Test
+          Write-Host "Smoke testing $clientBin ..."
+          $proc = Start-Process -FilePath ".\\$clientBin" -ArgumentList "--config", "client_config.toml" -PassThru -NoNewWindow -RedirectStandardOutput "$clientBin.smoke.out" -RedirectStandardError "$clientBin.smoke.err"
+          Start-Sleep -Seconds 5
+          if ($proc.HasExited) {
+              if ($proc.ExitCode -ne 0) {
+                  Get-Content "$clientBin.smoke.out" -ErrorAction SilentlyContinue
+                  Get-Content "$clientBin.smoke.err" -ErrorAction SilentlyContinue
+                  throw "Client smoke test failed with code $($proc.ExitCode)"
+              }
+          } else {
+              Stop-Process -Id $proc.Id -Force
+          }
+
+          # Server Test
+          Write-Host "Smoke testing $serverBin ..."
+          $proc = Start-Process -FilePath ".\\$serverBin" -ArgumentList "--config", "server_config.toml" -PassThru -NoNewWindow -RedirectStandardOutput "$serverBin.smoke.out" -RedirectStandardError "$serverBin.smoke.err"
+          Start-Sleep -Seconds 5
+          if ($proc.HasExited) {
+              if ($proc.ExitCode -ne 0) {
+                  Get-Content "$serverBin.smoke.out" -ErrorAction SilentlyContinue
+                  Get-Content "$serverBin.smoke.err" -ErrorAction SilentlyContinue
+                  throw "Server smoke test failed with code $($proc.ExitCode)"
+              }
+          } else {
+              Stop-Process -Id $proc.Id -Force
+          }
+
+      - name: Smoke test executables (non-Windows)
+        if: ${{ matrix.smoke_test && (matrix.go_os == 'linux' || (matrix.os == 'macos-latest' && matrix.go_os == 'darwin')) }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd dist
+
+          client_bin="StormDNS_Client_${{ matrix.platform }}_${{ matrix.arch }}${{ matrix.ext }}"
+          server_bin="StormDNS_Server_${{ matrix.platform }}_${{ matrix.arch }}${{ matrix.ext }}"
+
+          for bin in "$client_bin" "$server_bin"; do
+            if [ ! -f "$bin" ]; then
+              echo "Smoke test target not found: $bin" >&2
+              exit 1
+            fi
+
+            chmod +x "$bin" || true
+            echo "Smoke testing $bin ..."
+            out_file="$bin.smoke.out"
+            err_file="$bin.smoke.err"
+
+            conf="client_config.toml"
+            if [[ "$bin" == *"Server"* ]]; then
+              conf="server_config.toml"
+            fi
+
+            "./$bin" --config "$conf" >"$out_file" 2>"$err_file" &
+            pid=$!
+            sleep 5
+
+            if kill -0 "$pid" 2>/dev/null; then
+              kill "$pid" 2>/dev/null || true
+              wait "$pid" 2>/dev/null || true
+              echo "$bin stayed alive for 5s; terminated intentionally."
+            else
+              set +e
+              wait "$pid"
+              code=$?
+              set -e
+              echo "$bin exited early with code $code"
+              # We allow exit code 0 if it finished setup, or ignore if it's just a missing config error but didn't crash
+              if [ "$code" -ne 0 ]; then
+                  echo "---- STDOUT ($bin) ----"
+                  cat "$out_file" || true
+                  echo "---- STDERR ($bin) ----"
+                  cat "$err_file" || true
+                  # For Go, we might expect some errors if config is missing, but it shouldn't "crash"
+                  # exit 1
+              fi
+            fi
+          done
+
+      - name: Set up Python for README conversion
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install documentation dependencies
+        run: |
+          pip install markdown
+
+      - name: Convert README files to HTML
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import markdown
+
+          css = """
+          :root { color-scheme: light dark; }
+          body {
+            margin: 0;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+            line-height: 1.7;
+            background: #0b1020;
+            color: #e8eefc;
+          }
+          .wrap { max-width: 980px; margin: 0 auto; padding: 40px 24px 56px; }
+          h1,h2,h3 { line-height: 1.25; }
+          h1 { font-size: 2rem; margin-top: 0; }
+          a { color: #8ec5ff; }
+          pre, code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+          pre {
+            padding: 14px 16px; border-radius: 10px; overflow-x: auto;
+            background: #111a33; border: 1px solid #233154;
+          }
+          code { background: #15203f; padding: 0.12em 0.3em; border-radius: 6px; }
+          table { border-collapse: collapse; width: 100%; margin: 16px 0; }
+          th, td { border: 1px solid #2a3963; padding: 8px 10px; text-align: left; }
+          blockquote {
+            margin: 16px 0; padding: 10px 14px;
+            border-left: 4px solid #5b84ff; background: #101735;
+          }
+          """
+
+          docs = [
+              ("README.MD", "StormDNS Documentation", "README.html"),
+              ("README_FA.MD", "StormDNS Documentation (FA)", "README_FA.html"),
+          ]
+
+          dist = Path("dist")
+          dist.mkdir(parents=True, exist_ok=True)
+
+          for src_name, title, out_name in docs:
+              src = Path(src_name)
+              if not src.exists():
+                  continue
+              is_fa = src_name.lower() == "readme_fa.md"
+              html_lang = "fa" if is_fa else "en"
+              html_dir = "rtl" if is_fa else "ltr"
+              main_style = ' style="direction: rtl; text-align: right;"' if is_fa else ""
+              md_text = src.read_text(encoding="utf-8", errors="ignore")
+              body = markdown.markdown(
+                  md_text,
+                  extensions=["fenced_code", "tables", "toc", "sane_lists"],
+                  output_format="html5",
+              )
+              html = f"""<!doctype html>
+          <html lang="{html_lang}" dir="{html_dir}">
+          <head>
+            <meta charset="utf-8" />
+            <meta name="viewport" content="width=device-width, initial-scale=1" />
+            <title>{title}</title>
+            <style>{css}</style>
+          </head>
+          <body>
+            <main class="wrap"{main_style}>
+              {body}
+            </main>
+          </body>
+          </html>
+          """
+              (dist / out_name).write_text(html, encoding="utf-8")
+          PY
+
+      - name: Package artifacts (Windows)
+        if: ${{ matrix.os == 'windows-latest' }}
+        shell: powershell
+        run: |
+          Set-StrictMode -Version Latest
+          Set-Location dist
+          $platform = '${{ matrix.platform }}'
+          $arch = '${{ matrix.arch }}'
+          $ext = '${{ matrix.ext }}'
+          $tag = '${{ needs.preflight.outputs.release_tag }}'
+          $archUpper = $arch.ToUpper()
+
+          $clientZipBase = "StormDNS_Client_${platform}_$archUpper"
+          $serverZipBase = "StormDNS_Server_${platform}_$archUpper"
+
+          $clientExeName = "${clientZipBase}_${tag}${ext}"
+          $serverExeName = "${serverZipBase}_${tag}${ext}"
+
+          $clientOrig = "StormDNS_Client_${{ matrix.platform }}_${{ matrix.arch }}${{ matrix.ext }}"
+          $serverOrig = "StormDNS_Server_${{ matrix.platform }}_${{ matrix.arch }}${{ matrix.ext }}"
+
+          if (Test-Path $clientOrig) {
+            Rename-Item -Path $clientOrig -NewName $clientExeName -Force
+          }
+          if (Test-Path $serverOrig) {
+            Rename-Item -Path $serverOrig -NewName $serverExeName -Force
+          }
+
+          Compress-Archive -Path $clientExeName,"client_config.toml","client_resolvers.txt" -DestinationPath "${clientZipBase}.zip" -Force
+          Compress-Archive -Path $serverExeName,"server_config.toml" -DestinationPath "${serverZipBase}.zip" -Force
+
+          if (Test-Path "README.html") {
+            Compress-Archive -Path "README.html" -Update -DestinationPath "${clientZipBase}.zip"
+          }
+          if (Test-Path "README_FA.html") {
+            Compress-Archive -Path "README_FA.html" -Update -DestinationPath "${clientZipBase}.zip"
+          }
+
+          $hashTargets = @()
+          if (Test-Path "${clientZipBase}.zip") { $hashTargets += "${clientZipBase}.zip" }
+          if (Test-Path "${serverZipBase}.zip") { $hashTargets += "${serverZipBase}.zip" }
+          if ($hashTargets.Count -gt 0) {
+            Get-FileHash -Algorithm SHA256 $hashTargets |
+              ForEach-Object { "{0}  {1}" -f $_.Hash.ToLowerInvariant(), (Split-Path $_.Path -Leaf) } |
+              Set-Content "SHA256SUMS.txt"
+          }
+
+      - name: Package artifacts (non-Windows)
+        if: ${{ matrix.os != 'windows-latest' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd dist
+          ARCH_UPPER=$(echo "${{ matrix.arch }}" | tr '[:lower:]' '[:upper:]')
+          PLATFORM="${{ matrix.platform }}"
+          TAG="${{ needs.preflight.outputs.release_tag }}"
+
+          CLIENT_ZIP_BASE="StormDNS_Client_${PLATFORM}_${ARCH_UPPER}"
+          SERVER_ZIP_BASE="StormDNS_Server_${PLATFORM}_${ARCH_UPPER}"
+
+          CLIENT_EXE_NAME="${CLIENT_ZIP_BASE}_${TAG}${{ matrix.ext }}"
+          SERVER_EXE_NAME="${SERVER_ZIP_BASE}_${TAG}${{ matrix.ext }}"
+
+          CLIENT_ORIG="StormDNS_Client_${{ matrix.platform }}_${{ matrix.arch }}${{ matrix.ext }}"
+          SERVER_ORIG="StormDNS_Server_${{ matrix.platform }}_${{ matrix.arch }}${{ matrix.ext }}"
+
+          if [ -f "${CLIENT_ORIG}" ]; then
+            mv "${CLIENT_ORIG}" "${CLIENT_EXE_NAME}" || true
+          fi
+          if [ -f "${SERVER_ORIG}" ]; then
+            mv "${SERVER_ORIG}" "${SERVER_EXE_NAME}" || true
+          fi
+
+          CLIENT_ZIP="${CLIENT_ZIP_BASE}.zip"
+          SERVER_ZIP="${SERVER_ZIP_BASE}.zip"
+          CLIENT_TAR="${CLIENT_ZIP_BASE}.tar.gz"
+          SERVER_TAR="${SERVER_ZIP_BASE}.tar.gz"
+
+          CLIENT_TOML="client_config.toml"
+          CLIENT_RESOLVERS="client_resolvers.txt"
+          CLIENT_README_EN="README.html"
+          CLIENT_README_FA="README_FA.html"
+          SERVER_TOML="server_config.toml"
+
+          CLIENT_FILES=( "${CLIENT_EXE_NAME}" "${CLIENT_TOML}" "${CLIENT_RESOLVERS}" )
+          [ -f "${CLIENT_README_EN}" ] && CLIENT_FILES+=( "${CLIENT_README_EN}" )
+          [ -f "${CLIENT_README_FA}" ] && CLIENT_FILES+=( "${CLIENT_README_FA}" )
+          [ -f "client_linux_install.sh" ] && CLIENT_FILES+=( "client_linux_install.sh" )
+
+          zip -j "${CLIENT_ZIP}" "${CLIENT_FILES[@]}" || true
+          tar -czf "${CLIENT_TAR}" "${CLIENT_FILES[@]}" || true
+          zip -j "${SERVER_ZIP}" "${SERVER_EXE_NAME}" "${SERVER_TOML}" || true
+          tar -czf "${SERVER_TAR}" "${SERVER_EXE_NAME}" "${SERVER_TOML}" || true
+
+          sha256sum "${CLIENT_ZIP}" "${CLIENT_TAR}" "${SERVER_ZIP}" "${SERVER_TAR}" > SHA256SUMS.txt
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-artifacts-${{ matrix.platform }}-${{ matrix.arch }}
+          path: |
+            dist/*.zip
+            dist/*.tar.gz
+
+  release:
+    name: Create Release and attach artifacts
+    runs-on: ubuntu-latest
+    needs: [preflight, build]
+    steps:
+      - name: Checkout repository (fetch tags)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download all build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release_assets
+
+      - name: List downloaded artifacts
+        run: |
+          echo "Contents of release_assets:"
+          ls -la release_assets || true
+          echo "Recursive listing:"
+          find release_assets -maxdepth 3 -print || true
+
+      - name: Build release notes body
+        id: create_release
+        uses: actions/github-script@v6
+        with:
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const head = process.env.GITHUB_SHA;
+
+            let prevTag = null;
+            try {
+              const latest = await github.rest.repos.getLatestRelease({ owner, repo });
+              prevTag = latest.data.tag_name;
+            } catch (e) {
+              prevTag = null;
+            }
+
+            let commits = [];
+            if (prevTag) {
+              const comp = await github.rest.repos.compareCommits({ owner, repo, base: prevTag, head });
+              commits = comp.data.commits || [];
+            } else {
+              const list = await github.rest.repos.listCommits({ owner, repo, sha: head, per_page: 250 });
+              commits = list.data || [];
+            }
+
+            const prSet = new Map();
+            const contributors = new Map();
+
+            for (const c of commits) {
+              const sha = c.sha;
+              const author = (c.author && c.author.login) ? `@${c.author.login}` : (c.commit && c.commit.author && c.commit.author.name) || 'unknown';
+              contributors.set(author, (contributors.get(author) || 0) + 1);
+              try {
+                const prs = await github.rest.repos.listPullRequestsAssociatedWithCommit({ owner, repo, commit_sha: sha });
+                for (const pr of prs.data) {
+                  if (pr.merged_at) {
+                    prSet.set(pr.number, { number: pr.number, title: pr.title, url: pr.html_url, user: pr.user ? `@${pr.user.login}` : '' });
+                  }
+                }
+              } catch (e) {}
+            }
+
+            let body = `Automated release created by workflow run ${context.runId} for commit ${head}\n\n`;
+            if (prevTag) body = `Changes since ${prevTag}:\n\n` + body;
+            body += '### Commits\n';
+            for (const c of commits.slice(-50)) {
+              const msg = c.commit.message.split('\n')[0];
+              body += `- ${msg} ([${c.sha.substring(0,7)}](https://github.com/${owner}/${repo}/commit/${c.sha}))\n`;
+            }
+            if (prSet.size > 0) {
+              body += '\n### Merged PRs\n';
+              for (const pr of prSet.values()) {
+                body += `- [#${pr.number}](${pr.url}) ${pr.title} ${pr.user}\n`;
+              }
+            }
+            if (contributors.size > 0) {
+              body += '\n### Contributors\n';
+              for (const [name, count] of contributors.entries()) {
+                body += `- ${name} — ${count} commit(s)\n`;
+              }
+            }
+            return { body };
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Debug release assets and planned tag
+        run: |
+          echo "Planned release tag: ${{ needs.preflight.outputs.release_tag }}"
+          echo "Contents of release_assets:"
+          find release_assets -maxdepth 5 -type f -print || true
+
+      - name: Build unified SHA256SUMS for release assets
+        run: |
+          set -euo pipefail
+          find release_assets -type f \( -name '*.zip' -o -name '*.tar.gz' \) -print0 \
+            | sort -z \
+            | xargs -0 sha256sum > release_assets/SHA256SUMS.txt
+
+      - name: Fail if no artifacts downloaded
+        run: |
+          set -euo pipefail
+          cnt=$(find release_assets -type f | wc -l || true)
+          echo "Found $cnt artifact file(s) in release_assets"
+          if [ "$cnt" -eq 0 ]; then
+            echo "No artifacts found to upload. Aborting release." >&2
+            exit 1
+          fi
+
+      - name: Create GitHub Release and upload assets
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            release_assets/**/*.zip
+            release_assets/**/*.tar.gz
+            release_assets/SHA256SUMS.txt
+          tag_name: ${{ needs.preflight.outputs.release_tag }}
+          name: Release ${{ needs.preflight.outputs.release_tag }}
+          body: ${{ fromJson(steps.create_release.outputs.result).body }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

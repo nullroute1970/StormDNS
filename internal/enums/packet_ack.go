@@ -1,0 +1,74 @@
+﻿// ==============================================================================
+// StormDNS
+// Author: nullroute1970
+// Github: https://github.com/nullroute1970/StormDNS
+// Year: 2026
+// ==============================================================================
+
+package enums
+
+// ControlAckPairs centralizes the deterministic ACK/response packet type for
+// control/setup packets. Data ACKs intentionally remain inside ARQ.
+var ControlAckPairs = map[uint8]uint8{
+	PACKET_DNS_QUERY_REQ:                   PACKET_DNS_QUERY_REQ_ACK,
+	PACKET_DNS_QUERY_RES:                   PACKET_DNS_QUERY_RES_ACK,
+	PACKET_STREAM_SYN:                      PACKET_STREAM_SYN_ACK,
+	PACKET_STREAM_CONNECTED:                PACKET_STREAM_CONNECTED_ACK,
+	PACKET_STREAM_CONNECT_FAIL:             PACKET_STREAM_CONNECT_FAIL_ACK,
+	PACKET_STREAM_CLOSE_WRITE:              PACKET_STREAM_CLOSE_WRITE_ACK,
+	PACKET_STREAM_CLOSE_READ:               PACKET_STREAM_CLOSE_READ_ACK,
+	PACKET_STREAM_RST:                      PACKET_STREAM_RST_ACK,
+	PACKET_SOCKS5_SYN:                      PACKET_SOCKS5_SYN_ACK,
+	PACKET_SOCKS5_CONNECT_FAIL:             PACKET_SOCKS5_CONNECT_FAIL_ACK,
+	PACKET_SOCKS5_RULESET_DENIED:           PACKET_SOCKS5_RULESET_DENIED_ACK,
+	PACKET_SOCKS5_NETWORK_UNREACHABLE:      PACKET_SOCKS5_NETWORK_UNREACHABLE_ACK,
+	PACKET_SOCKS5_HOST_UNREACHABLE:         PACKET_SOCKS5_HOST_UNREACHABLE_ACK,
+	PACKET_SOCKS5_CONNECTION_REFUSED:       PACKET_SOCKS5_CONNECTION_REFUSED_ACK,
+	PACKET_SOCKS5_TTL_EXPIRED:              PACKET_SOCKS5_TTL_EXPIRED_ACK,
+	PACKET_SOCKS5_COMMAND_UNSUPPORTED:      PACKET_SOCKS5_COMMAND_UNSUPPORTED_ACK,
+	PACKET_SOCKS5_ADDRESS_TYPE_UNSUPPORTED: PACKET_SOCKS5_ADDRESS_TYPE_UNSUPPORTED_ACK,
+	PACKET_SOCKS5_AUTH_FAILED:              PACKET_SOCKS5_AUTH_FAILED_ACK,
+	PACKET_SOCKS5_UPSTREAM_UNAVAILABLE:     PACKET_SOCKS5_UPSTREAM_UNAVAILABLE_ACK,
+	PACKET_SOCKS5_CONNECTED:                PACKET_SOCKS5_CONNECTED_ACK,
+}
+
+var PacketsCloseStream = map[uint8]uint8{
+	PACKET_STREAM_RST:                      PACKET_STREAM_RST_ACK,
+	PACKET_STREAM_CLOSE_WRITE:              PACKET_STREAM_CLOSE_WRITE_ACK,
+	PACKET_STREAM_CLOSE_READ:               PACKET_STREAM_CLOSE_READ_ACK,
+	PACKET_SOCKS5_RULESET_DENIED:           PACKET_SOCKS5_RULESET_DENIED_ACK,
+	PACKET_SOCKS5_NETWORK_UNREACHABLE:      PACKET_SOCKS5_NETWORK_UNREACHABLE_ACK,
+	PACKET_SOCKS5_HOST_UNREACHABLE:         PACKET_SOCKS5_HOST_UNREACHABLE_ACK,
+	PACKET_SOCKS5_CONNECTION_REFUSED:       PACKET_SOCKS5_CONNECTION_REFUSED_ACK,
+	PACKET_SOCKS5_TTL_EXPIRED:              PACKET_SOCKS5_TTL_EXPIRED_ACK,
+	PACKET_SOCKS5_COMMAND_UNSUPPORTED:      PACKET_SOCKS5_COMMAND_UNSUPPORTED_ACK,
+	PACKET_SOCKS5_ADDRESS_TYPE_UNSUPPORTED: PACKET_SOCKS5_ADDRESS_TYPE_UNSUPPORTED_ACK,
+	PACKET_SOCKS5_AUTH_FAILED:              PACKET_SOCKS5_AUTH_FAILED_ACK,
+	PACKET_SOCKS5_UPSTREAM_UNAVAILABLE:     PACKET_SOCKS5_UPSTREAM_UNAVAILABLE_ACK,
+	PACKET_STREAM_CONNECT_FAIL:             PACKET_STREAM_CONNECT_FAIL_ACK,
+	PACKET_SOCKS5_CONNECT_FAIL:             PACKET_SOCKS5_CONNECT_FAIL_ACK,
+}
+
+func GetPacketCloseStream(packetType uint8) (uint8, bool) {
+	ack_answer, ok := PacketsCloseStream[packetType]
+	return ack_answer, ok
+}
+
+var reverseControlAckPairs map[uint8]uint8
+
+func init() {
+	reverseControlAckPairs = make(map[uint8]uint8, len(ControlAckPairs))
+	for packetType, ackType := range ControlAckPairs {
+		reverseControlAckPairs[ackType] = packetType
+	}
+}
+
+func ControlAckFor(packetType uint8) (uint8, bool) {
+	ackType, ok := ControlAckPairs[packetType]
+	return ackType, ok
+}
+
+func ReverseControlAckFor(ackType uint8) (uint8, bool) {
+	packetType, ok := reverseControlAckPairs[ackType]
+	return packetType, ok
+}

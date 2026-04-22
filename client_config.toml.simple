@@ -1,0 +1,428 @@
+# ==============================================================================
+# StormDNS Go Client Configuration (Sample)
+# This sample is written for the current Go client implementation.
+# Every key below is read by code or intentionally kept as an active runtime knob.
+# Profile below is biased toward lossy / high-latency links with many resolvers.
+# ==============================================================================
+
+# ------------------------------------------------------------------------------
+# 1) Tunnel Identity & Security
+# What this section does:
+# - Defines which tunnel domains this client will use.
+# - Defines payload encryption and the shared key that must match the server.
+# ------------------------------------------------------------------------------
+
+# Tunnel domains used to build DNS queries.
+# Must match server DOMAIN values exactly.
+# At least one domain is required.
+# All domains must be handled by the same server. Do not use different domains across multiple servers.
+DOMAINS = ["v.domain.com"]
+
+# Encryption method for tunnel payloads.
+# Allowed values:
+# 0 = None
+# 1 = XOR
+# 2 = ChaCha20
+# 3 = AES-128-GCM
+# 4 = AES-192-GCM
+# 5 = AES-256-GCM
+# Must match server DATA_ENCRYPTION_METHOD.
+DATA_ENCRYPTION_METHOD = 1
+
+# Shared encryption key.
+# Required on the client.
+# Must match the server-side key file contents.
+ENCRYPTION_KEY = ""
+
+# ------------------------------------------------------------------------------
+# 2) Local Proxy Listener
+# What this section does:
+# - Controls where the local client proxy listens.
+# - Controls whether local SOCKS authentication is required.
+# ------------------------------------------------------------------------------
+
+# Local mode.
+# Allowed values:
+# "SOCKS5" = normal proxy mode for browsers/apps
+# "TCP"    = raw TCP tunnel mode
+PROTOCOL_TYPE = "SOCKS5"
+
+# Local bind address for the client proxy.
+# For local-only use, "127.0.0.1" is fine.
+# On systems where apps prefer IPv6 localhost (for example some macOS setups),
+# "localhost" can be a better choice.
+# If you want other devices on your network to use this proxy, use "0.0.0.0"
+# and enable SOCKS5_AUTH.
+LISTEN_IP = "127.0.0.1"
+LISTEN_PORT = 18000
+
+# Local SOCKS5 authentication.
+# This protects the local proxy itself, not the remote server.
+SOCKS5_AUTH = false
+SOCKS5_USER = "master_dns_vpn"
+SOCKS5_PASS = "master_dns_vpn"
+
+# ------------------------------------------------------------------------------
+# 3) Local DNS Service
+# What this section does:
+# - Controls the optional built-in local DNS listener.
+# - Controls local DNS cache size, TTL, pending timeout, and fragment assembly.
+# ------------------------------------------------------------------------------
+
+# When true, the client exposes a local DNS server on LOCAL_DNS_IP:LOCAL_DNS_PORT.
+LOCAL_DNS_ENABLED = false
+LOCAL_DNS_IP = "127.0.0.1"
+LOCAL_DNS_PORT = 53
+
+# Local DNS cache sizing.
+# Must be >= 1.
+LOCAL_DNS_CACHE_MAX_RECORDS = 10000
+
+# TTL used by the local DNS cache in seconds.
+# If <= 0, code falls back to a default.
+LOCAL_DNS_CACHE_TTL_SECONDS = 14400.0
+
+# Maximum time a local DNS request is allowed to remain pending before it is
+# treated as expired locally.
+LOCAL_DNS_PENDING_TIMEOUT_SECONDS = 60.0
+
+# Timeout for reassembling fragmented DNS tunnel responses.
+# Used when DNS_QUERY_RES packets arrive in multiple fragments.
+# Clamped in code to [1s, 600s].
+DNS_RESPONSE_FRAGMENT_TIMEOUT_SECONDS = 60.0
+
+# Persist local DNS cache to disk.
+LOCAL_DNS_CACHE_PERSIST_TO_FILE = true
+
+# Flush interval for persisted local DNS cache.
+LOCAL_DNS_CACHE_FLUSH_INTERVAL_SECONDS = 60.0
+
+# ------------------------------------------------------------------------------
+# 4) Resolver Selection, Duplication, and Health
+# What this section does:
+# - Chooses how resolvers are selected.
+# - Controls packet duplication for lossy networks.
+# - Controls stream-aware resolver failover.
+# - Controls background recheck and auto-disable of bad resolvers.
+# ------------------------------------------------------------------------------
+
+# Resolver balancing strategy.
+# Allowed values:
+# 1 = Random
+# 2 = Round Robin
+# 3 = Least Loss
+# 4 = Lowest Latency
+# Modes 3 and 4 use runtime feedback from sends/successes.
+RESOLVER_BALANCING_STRATEGY = 3
+
+# ---- Packet duplication -------------------------------------------------------
+# All tunnel packets are sent by the client as DNS queries, so every
+# duplicated packet consumes upload bandwidth. The "direction" below refers
+# to what the packet's payload represents:
+#
+#   - Upload data  : STREAM_DATA, STREAM_RESEND
+#                    (bulk bytes from you -> internet; duplication cost scales
+#                    with your real upload traffic)
+#   - Download ACK : STREAM_DATA_ACK, STREAM_DATA_NACK
+#                    (tiny acknowledgements for bytes you are receiving;
+#                    duplicating them barely costs upload bandwidth but
+#                    improves download reliability on lossy links)
+#   - Upload setup : STREAM_SYN, SOCKS5_SYN
+#                    (small, upload-path critical)
+#   - Download setup/control : PACKED_CONTROL_BLOCKS, STREAM_CLOSE_READ,
+#                              STREAM_CLOSE_WRITE
+#                              (small, reliability-sensitive control/teardown)
+#
+# TIP: On links with very limited upload bandwidth (e.g., typical Iranian ISP
+# conditions) you usually want:
+#   UPLOAD_PACKET_DUPLICATION_COUNT        = 1 or 2
+#   DOWNLOAD_PACKET_DUPLICATION_COUNT      = 4 .. 7
+#   UPLOAD_SETUP_PACKET_DUPLICATION_COUNT  = 2 .. 4
+#   DOWNLOAD_SETUP_PACKET_DUPLICATION_COUNT= 4 .. 8
+
+# Duplication for upload data packets (STREAM_DATA, STREAM_RESEND).
+# Clamped in code to [1, 8].
+UPLOAD_PACKET_DUPLICATION_COUNT = 3
+
+# Duplication for download-ACK packets (STREAM_DATA_ACK, STREAM_DATA_NACK).
+# Clamped in code to [1, 8].
+DOWNLOAD_PACKET_DUPLICATION_COUNT = 7
+
+# Duplication for upload setup packets (STREAM_SYN, SOCKS5_SYN).
+# Clamped in code to [UPLOAD_PACKET_DUPLICATION_COUNT, 8].
+UPLOAD_SETUP_PACKET_DUPLICATION_COUNT = 4
+
+# Duplication for download setup / control packets
+# (PACKED_CONTROL_BLOCKS, STREAM_CLOSE_READ, STREAM_CLOSE_WRITE).
+# Clamped in code to [DOWNLOAD_PACKET_DUPLICATION_COUNT, 8].
+DOWNLOAD_SETUP_PACKET_DUPLICATION_COUNT = 8
+
+# Stream-aware resolver failover.
+# If a stream keeps resending on the same preferred resolver, it can move.
+# Threshold is clamped to [1, 128].
+STREAM_RESOLVER_FAILOVER_RESEND_THRESHOLD = 1
+
+# Minimum seconds between preferred-resolver switches for the same stream.
+# Clamped to [0.1s, 120s].
+STREAM_RESOLVER_FAILOVER_COOLDOWN = 0.5
+
+# If true, resolvers rejected during initial MTU testing are rechecked in the
+# background using the current synced upload/download MTUs.
+RECHECK_INACTIVE_SERVERS_ENABLED = true
+
+# Full background recheck cycle interval.
+# Clamped to [60s, 86400s].
+RECHECK_INACTIVE_INTERVAL_SECONDS = 30.0
+
+# Delay between background rechecks of individual resolver entries.
+# Clamped to [1s, 600s].
+RECHECK_SERVER_INTERVAL_SECONDS = 1.0
+
+# Number of inactive/runtime-disabled resolver entries rechecked per cycle.
+# Clamped to [1, 1024].
+RECHECK_BATCH_SIZE = 30
+
+# If true, a resolver is runtime-disabled when it stays timeout-only across the
+# configured window and enough observations have been collected.
+AUTO_DISABLE_TIMEOUT_SERVERS = true
+
+# Timeout-only observation window in seconds.
+# Clamped to [1s, 86400s].
+AUTO_DISABLE_TIMEOUT_WINDOW_SECONDS = 20.0
+
+# Minimum observations required before auto-disable can trigger.
+# Clamped to [1, 10000].
+AUTO_DISABLE_MIN_OBSERVATIONS = 3
+
+# Frequency of auto-disable evaluation.
+# Clamped to [0.25s, 600s].
+AUTO_DISABLE_CHECK_INTERVAL_SECONDS = 1.0
+
+# If true, payload labels are base-encoded before tunneling.
+# Usually keep false unless a specific resolver path behaves better with it.
+BASE_ENCODE_DATA = false
+
+# ------------------------------------------------------------------------------
+# 5) Compression
+# What this section does:
+# - Controls payload compression negotiation for upload and download directions.
+# ------------------------------------------------------------------------------
+
+# Allowed values:
+# 0 = OFF
+# 1 = ZSTD
+# 2 = LZ4
+# 3 = ZLIB
+UPLOAD_COMPRESSION_TYPE = 2
+DOWNLOAD_COMPRESSION_TYPE = 2
+
+# Minimum payload size before compression is attempted.
+# Must be >= 1.
+COMPRESSION_MIN_SIZE = 120
+
+# ------------------------------------------------------------------------------
+# 6) MTU Discovery
+# What this section does:
+# - Controls initial resolver validation and MTU discovery.
+# ------------------------------------------------------------------------------
+
+# Minimum accepted upload/download MTUs after testing.
+# 0 can be used to effectively disable a bound, but keep realistic values.
+MIN_UPLOAD_MTU = 100
+MIN_DOWNLOAD_MTU = 1000
+
+# Initial maximum MTU search bounds.
+# Must be >= the matching MIN value if both are set.
+MAX_UPLOAD_MTU = 200
+MAX_DOWNLOAD_MTU = 4000
+
+# MTU probe retries, timeout, and parallelism.
+# Retries and parallelism must be >= 1.
+MTU_TEST_RETRIES = 5
+MTU_TEST_TIMEOUT = 2.0
+MTU_TEST_PARALLELISM = 100
+
+# ------------------------------------------------------------------------------
+# 7) Runtime Workers, Queues, and Timers
+# What this section does:
+# - Controls async reader/writer/processor worker counts.
+# - Controls queue sizes and dispatcher polling.
+# - Controls stream cleanup retention and local UDP associate timeout.
+# ------------------------------------------------------------------------------
+
+# Async tunnel runtime worker counts.
+# Each must be >= 1.
+RX_TX_WORKERS = 32
+TUNNEL_PROCESS_WORKERS = 32
+
+# Per-packet tunnel timeout used in async runtime paths.
+# Clamped to [0.5s, 120s].
+TUNNEL_PACKET_TIMEOUT_SECONDS = 10.0
+
+# Dispatcher idle polling interval.
+# Lower values reduce wake latency but consume more CPU.
+# Clamped to [0.001s, 1s].
+DISPATCHER_IDLE_POLL_INTERVAL_SECONDS = 0.020
+
+# Channel sizes for async TX/RX pipelines.
+# Clamped in code to [64, 65536].
+TX_CHANNEL_SIZE = 2048
+RX_CHANNEL_SIZE = 2048
+
+# UDP connection pool size per resolver key.
+# Clamped to [1, 1024].
+RESOLVER_UDP_CONNECTION_POOL_SIZE = 256
+
+# Initial queue/store capacities.
+# These reduce reallocations under many active streams.
+STREAM_QUEUE_INITIAL_CAPACITY = 512
+ORPHAN_QUEUE_INITIAL_CAPACITY = 128
+DNS_RESPONSE_FRAGMENT_STORE_CAPACITY = 1024
+
+# Local UDP ASSOCIATE read timeout.
+# Clamped to [1s, 3600s].
+SOCKS_UDP_ASSOCIATE_READ_TIMEOUT_SECONDS = 30.0
+
+# How long terminal streams are retained before cleanup.
+# Clamped to [1s, 3600s].
+CLIENT_TERMINAL_STREAM_RETENTION_SECONDS = 45.0
+
+# How long cancelled setup streams are retained before cleanup.
+# Clamped to [1s, 3600s].
+CLIENT_CANCELLED_SETUP_RETENTION_SECONDS = 120.0
+
+# Session init retry profile.
+# These shape retry delays after failed init/reset attempts.
+# Base/step/max are durations; linear_after is a count threshold.
+SESSION_INIT_RETRY_BASE_SECONDS = 1.0
+SESSION_INIT_RETRY_STEP_SECONDS = 1.0
+SESSION_INIT_RETRY_LINEAR_AFTER = 5
+SESSION_INIT_RETRY_MAX_SECONDS = 60.0
+
+# Retry delay after SESSION_BUSY.
+# Clamped to [1s, 3600s].
+SESSION_INIT_BUSY_RETRY_INTERVAL_SECONDS = 60.0
+
+# Ping/keepalive pacing.
+# These control how aggressively the client sends ping traffic depending on
+# recent activity.
+PING_AGGRESSIVE_INTERVAL_SECONDS = 0.200
+PING_LAZY_INTERVAL_SECONDS = 0.750
+PING_COOLDOWN_INTERVAL_SECONDS = 2.0
+PING_COLD_INTERVAL_SECONDS = 15.0
+PING_WARM_THRESHOLD_SECONDS = 5.0
+PING_COOL_THRESHOLD_SECONDS = 15.0
+PING_COLD_THRESHOLD_SECONDS = 30.0
+
+# Watchdog: if the client has been actively sending non-ping traffic but
+# receives no server response at all for this long, the session is forcibly
+# restarted. This recovers the "zombie" state where all resolvers are
+# silently dropping packets and no server-initiated reset (REJECT / BUSY /
+# ERROR_DROP) ever arrives. Clamped to [10s, 3600s]. Set to 0 to disable.
+PING_WATCHDOG_TIMEOUT_SECONDS = 300.0
+
+# ------------------------------------------------------------------------------
+# 8) ARQ Reliability & Packing
+# What this section does:
+# - Controls data/control retransmission behavior.
+# - Controls per-stream buffering limits and batch packing.
+# ------------------------------------------------------------------------------
+
+# Maximum control blocks packed together in one outgoing batch.
+# Clamped to [1, 64].
+MAX_PACKETS_PER_BATCH = 8
+
+# ARQ data/control behavior.
+# These values are clamped in code and should stay internally consistent.
+ARQ_WINDOW_SIZE = 1000
+ARQ_INITIAL_RTO_SECONDS = 0.6
+ARQ_MAX_RTO_SECONDS = 3.0
+ARQ_CONTROL_INITIAL_RTO_SECONDS = 0.5
+ARQ_CONTROL_MAX_RTO_SECONDS = 2.0
+ARQ_MAX_CONTROL_RETRIES = 120
+ARQ_INACTIVITY_TIMEOUT_SECONDS = 1800.0
+ARQ_DATA_PACKET_TTL_SECONDS = 2400.0
+ARQ_CONTROL_PACKET_TTL_SECONDS = 1200.0
+ARQ_MAX_DATA_RETRIES = 120
+
+# Maximum out-of-order gap ahead of rcvNxt that can trigger STREAM_DATA_NACK.
+# 0 disables NACK generation entirely.
+# Keep this small so only near-miss gaps cause early resend requests.
+ARQ_DATA_NACK_MAX_GAP = 64
+
+# Minimum seconds between repeated NACKs for the same missing sequence number.
+# Clamped to [0.1s, 30s].
+ARQ_DATA_NACK_INITIAL_DELAY_SECONDS = 0.4
+ARQ_DATA_NACK_REPEAT_SECONDS = 0.8
+
+ARQ_TERMINAL_DRAIN_TIMEOUT_SECONDS = 120.0
+ARQ_TERMINAL_ACK_WAIT_TIMEOUT_SECONDS = 90.0
+
+# ------------------------------------------------------------------------------
+# 9) Logging
+# What this section does:
+# - Controls console/file logger verbosity.
+# - Controls per-session log file creation.
+# - When LOG_TO_FILE is true, each session also writes a structured
+#   resolver_cache_<timestamp>.log file to LOG_DIR containing the working
+#   resolvers and their MTU values, which is consumed by the log-based startup
+#   path (see Section 10).
+# ------------------------------------------------------------------------------
+
+# Typical values: DEBUG, INFO, WARN, ERROR
+LOG_LEVEL = "INFO"
+
+# When true, the session log and the resolver-cache statistics log are both
+# written to LOG_DIR.  Enabled by default so that logs from each session are
+# available for review and for log-based startup (see Section 10).
+LOG_TO_FILE = true
+
+# Directory (relative to the config file, or absolute) where log files are stored.
+LOG_DIR = "logs"
+
+# File name template for the session log file.
+# {time} is replaced with the startup timestamp (YYYYMMDD_HHMMSS).
+LOG_FILE_NAME = "stormdns_{time}.log"
+
+# Interval in seconds at which upload/download speed and cumulative session
+# totals are printed to the console log window.
+# Set to 0 to disable the stats reporter entirely.
+# When > 0, the value is clamped to [1, 3600].
+STATS_REPORT_INTERVAL_SECONDS = 10.0
+
+# ------------------------------------------------------------------------------
+# 10) Log-Based Startup
+# What this section does:
+# - Controls whether the app can start from previous session log files instead
+#   of running a full resolver scan, dramatically reducing startup time.
+# - The resolver cache log records every working resolver + its MTU values at
+#   the end of each successful MTU test. On subsequent launches the app can
+#   restore those values directly.
+# ------------------------------------------------------------------------------
+
+# Startup mode.
+# Allowed values:
+#   "ask"       = prompt the user each time (auto-selects option 1 after 10 s)
+#   "resolvers" = always start from client_resolvers.txt (full scan, no prompt)
+#   "logs"      = always start from log files (no prompt; falls back to full
+#                 scan when no usable log entries are found)
+STARTUP_MODE = "resolvers"
+
+# Maximum age (in days) of resolver cache log files that will be considered
+# during log-based startup.  0 means use all files regardless of age.
+LOG_SCAN_MAX_DAYS = 30
+
+# Maximum number of resolvers to load from log files.
+# Resolvers are ranked by quality (appear-count × 1000 + DOWN-MTU + UP-MTU).
+# 0 means use all found resolvers.
+LOG_SCAN_MAX_RESOLVERS = 0
+
+# When true, even a log-based startup will run the full MTU scan to verify
+# that the previously-known resolvers are still reachable.
+# When false (default), MTU testing is skipped and pre-known values are used
+# directly, giving the fastest possible startup time.
+LOG_BASED_MTU_VERIFY = true
+
+# ------------------------------------------------------------------------------
+
+CONFIG_VERSION = "1"

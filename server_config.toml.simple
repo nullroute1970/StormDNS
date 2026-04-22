@@ -1,0 +1,274 @@
+# ==============================================================================
+# StormDNS Go Server Configuration (Sample)
+# This sample is written for the current Go server implementation.
+# Comments below describe the real Go code paths, not the legacy Python server.
+# ==============================================================================
+
+# ------------------------------------------------------------------------------
+# 1) Tunnel Policy
+# What this section does:
+# - Defines which domains belong to this tunnel.
+# - Defines label policy and allowed compression negotiation.
+# ------------------------------------------------------------------------------
+
+# Tunnel domains handled by this server.
+# Must match client DOMAINS.
+DOMAIN = ["v.domain.com"]
+
+# How this server should handle new connections.
+# Allowed values:
+# "SOCKS5" = the client/program chooses the destination for each connection.
+#            Use this when you want the server to behave like a normal SOCKS proxy.
+# "TCP"    = the client does not choose the destination.
+#            The server sends every connection to one fixed target defined by
+#            FORWARD_IP and FORWARD_PORT below.
+PROTOCOL_TYPE = "SOCKS5"
+
+# Compression types the server allows the client to request.
+# Allowed values:
+# 0 = OFF
+# 1 = ZSTD
+# 2 = LZ4
+# 3 = ZLIB
+SUPPORTED_UPLOAD_COMPRESSION_TYPES = [0, 1, 2, 3]
+SUPPORTED_DOWNLOAD_COMPRESSION_TYPES = [0, 1, 2, 3]
+
+# ------------------------------------------------------------------------------
+# 2) UDP Listener & Front-Door Capacity
+# What this section does:
+# - Defines where the server listens for DNS tunnel traffic.
+# - Defines front-door queueing and worker limits before session handling.
+# ------------------------------------------------------------------------------
+
+# UDP bind endpoint.
+UDP_HOST = "0.0.0.0"
+UDP_PORT = 53
+
+# Number of UDP reader goroutines.
+# If <= 0, code falls back to an auto default.
+UDP_READERS = 7
+
+# Number of DNS request workers that process incoming packets.
+# If <= 0, code falls back to an auto default.
+DNS_REQUEST_WORKERS = 7
+
+# Maximum queued requests waiting behind request workers.
+# If the queue is full, packets are dropped and rate-limited overload logs appear.
+# With the current client sample using larger RX buffering, keeping this at 8192
+# helps the server absorb short bursts without dropping front-door requests too early.
+MAX_CONCURRENT_REQUESTS = 16384
+
+# UDP socket read/write buffer size in bytes.
+SOCKET_BUFFER_SIZE = 8388608
+
+# Maximum packet buffer size allocated by the server packet pool.
+MAX_PACKET_SIZE = 65535
+
+# Minimum interval between overload/drop logs.
+DROP_LOG_INTERVAL_SECONDS = 2.0
+
+# ------------------------------------------------------------------------------
+# 3) Deferred Session Runtime
+# What this section does:
+# - Controls the per-session deferred workers used for setup/DNS/ordered tasks.
+# - Controls initial queue capacities used inside session runtime structures.
+# ------------------------------------------------------------------------------
+
+# Worker count for deferred per-session processing.
+# These workers serialize heavy or ordering-sensitive tasks behind session keys.
+DEFERRED_SESSION_WORKERS = 4
+
+# Queue limit for deferred per-session work.
+# Keep this a bit higher than the client-side setup pressure so bursty SYN/SOCKS/DNS
+# setup traffic is less likely to be dropped during short spikes.
+DEFERRED_SESSION_QUEUE_LIMIT = 4096
+
+# Initial queue / store capacities.
+SESSION_ORPHAN_QUEUE_INITIAL_CAPACITY = 128
+STREAM_QUEUE_INITIAL_CAPACITY = 256
+DNS_FRAGMENT_STORE_CAPACITY = 512
+SOCKS5_FRAGMENT_STORE_CAPACITY = 1024
+
+# ------------------------------------------------------------------------------
+# 4) Session Lifecycle & Invalid-Cookie Handling
+# What this section does:
+# - Controls how long sessions live.
+# - Controls cleanup cadence.
+# - Controls recently-closed stream tracking.
+# - Controls invalid-cookie detection before ERROR_DROP behavior.
+# ------------------------------------------------------------------------------
+
+# Sliding window used by the invalid-cookie tracker.
+INVALID_COOKIE_WINDOW_SECONDS = 2.0
+
+# How many invalid-cookie hits inside the window are tolerated before the
+# server escalates the response behavior for that session.
+INVALID_COOKIE_ERROR_THRESHOLD = 10
+
+# Session inactivity timeout.
+SESSION_TIMEOUT_SECONDS = 300.0
+
+# How often the background cleanup loop runs.
+SESSION_CLEANUP_INTERVAL_SECONDS = 30.0
+
+# How long closed-session metadata is kept after cleanup.
+CLOSED_SESSION_RETENTION_SECONDS = 600.0
+
+# How long an accepted SESSION_INIT signature can be reused before the server
+# stops treating it as reusable init state.
+SESSION_INIT_REUSE_TTL_SECONDS = 600.0
+
+# How long a closed stream remains in the "recently closed" table.
+# Used to reject late SYNs / duplicates without reviving dead streams.
+RECENTLY_CLOSED_STREAM_TTL_SECONDS = 600.0
+
+# Maximum number of recently-closed stream records kept per session.
+RECENTLY_CLOSED_STREAM_CAP = 2000
+
+# How long terminal streams remain before terminal-stream sweep removes them.
+TERMINAL_STREAM_RETENTION_SECONDS = 45.0
+
+# ------------------------------------------------------------------------------
+# 5) DNS Tunnel Upstream
+# What this section does:
+# - Controls upstream DNS resolution used for DNS-over-tunnel requests.
+# - Controls fragment assembly and tunnel DNS cache behavior.
+# ------------------------------------------------------------------------------
+
+# Upstream resolvers used when the client sends DNS_QUERY_REQ through the tunnel.
+DNS_UPSTREAM_SERVERS = ["1.1.1.1:53", "1.0.0.1:53"]
+
+# Timeout for each upstream DNS exchange attempt.
+DNS_UPSTREAM_TIMEOUT = 4.0
+
+# Wait timeout for followers sharing an inflight DNS resolution.
+# This is used when multiple identical queries arrive while one upstream lookup
+# is already in progress.
+DNS_INFLIGHT_WAIT_TIMEOUT_SECONDS = 15.0
+
+# Fragment assembly timeout for inbound DNS query fragments.
+DNS_FRAGMENT_ASSEMBLY_TIMEOUT = 300.0
+
+# In-memory tunnel DNS cache sizing.
+DNS_CACHE_MAX_RECORDS = 50000
+DNS_CACHE_TTL_SECONDS = 300.0
+
+# ------------------------------------------------------------------------------
+# 6) Upstream SOCKS / Forwarding
+# What this section does:
+# - Controls how the server opens outbound connections.
+# - In SOCKS5 mode, the destination normally comes from the client request.
+# - In TCP mode, all connections go to one fixed destination.
+# - You can also tell the server to use another SOCKS5 proxy as an upstream proxy.
+# ------------------------------------------------------------------------------
+
+# Timeout for outbound connect attempts made by the server.
+SOCKS_CONNECT_TIMEOUT = 120.0
+
+# If true, then in SOCKS5 mode the server does not connect to the final target directly.
+# Instead, it first connects to another SOCKS5 proxy at FORWARD_IP:FORWARD_PORT
+# and asks that proxy to open the destination connection.
+# If false, SOCKS5 mode connects directly to the destination requested by the client.
+# This option does NOT change TCP mode behavior.
+USE_EXTERNAL_SOCKS5 = false
+
+# Username/password for the upstream SOCKS5 proxy.
+# Used only when:
+# - PROTOCOL_TYPE = "SOCKS5"
+# - USE_EXTERNAL_SOCKS5 = true
+# - and that upstream proxy requires username/password authentication
+SOCKS5_AUTH = false
+SOCKS5_USER = "admin"
+SOCKS5_PASS = "123456"
+
+# FORWARD_IP / FORWARD_PORT mean different things depending on how the server is used:
+# - If PROTOCOL_TYPE = "TCP":
+#   This is the final fixed target.
+#   Every client connection will be forwarded to this one address and port.
+# - If PROTOCOL_TYPE = "SOCKS5" and USE_EXTERNAL_SOCKS5 = true:
+#   This is the address and port of the upstream SOCKS5 proxy.
+# - If PROTOCOL_TYPE = "SOCKS5" and USE_EXTERNAL_SOCKS5 = false:
+#   These values are not used for normal client SOCKS connections.
+FORWARD_IP = ""
+FORWARD_PORT = 0
+
+# ------------------------------------------------------------------------------
+# 7) Security
+# What this section does:
+# - Controls payload encryption method and where the server key is loaded from.
+# ------------------------------------------------------------------------------
+
+# Allowed values:
+# 0 = None
+# 1 = XOR
+# 2 = ChaCha20
+# 3 = AES-128-GCM
+# 4 = AES-192-GCM
+# 5 = AES-256-GCM
+# Must match the client.
+DATA_ENCRYPTION_METHOD = 1
+
+# Relative or absolute path to the encryption key file.
+ENCRYPTION_KEY_FILE = "encrypt_key.txt"
+
+# ------------------------------------------------------------------------------
+# 8) ARQ, Packing, and Setup-Control TTLs
+# What this section does:
+# - Controls reliability parameters for stream ARQ.
+# - Controls control-block batching.
+# - Controls TTLs for setup/result/failure control packets generated by the server.
+# ------------------------------------------------------------------------------
+
+# Maximum packable control blocks emitted in one response.
+# Keep this aligned with the client sample unless you intentionally want larger
+# packed bursts from the server.
+MAX_PACKETS_PER_BATCH = 10
+
+# Duplicate the last packed control-block response this many dispatcher turns.
+# 1 = disabled.
+# Useful on lossy links so CLOSE/RST/SYN-ACK-style control blocks are repeated
+# without repopping queues.
+PACKET_BLOCK_CONTROL_DUPLICATION = 1
+
+# TTLs for control packets sent during stream setup/result paths.
+STREAM_SETUP_ACK_TTL_SECONDS = 400.0
+STREAM_RESULT_PACKET_TTL_SECONDS = 300.0
+STREAM_FAILURE_PACKET_TTL_SECONDS = 120.0
+
+# ARQ timing / retry profile.
+ARQ_WINDOW_SIZE = 1000
+ARQ_INITIAL_RTO_SECONDS = 0.6
+ARQ_MAX_RTO_SECONDS = 3.0
+ARQ_CONTROL_INITIAL_RTO_SECONDS = 0.5
+ARQ_CONTROL_MAX_RTO_SECONDS = 2.0
+ARQ_MAX_CONTROL_RETRIES = 120
+ARQ_INACTIVITY_TIMEOUT_SECONDS = 1800.0
+ARQ_DATA_PACKET_TTL_SECONDS = 2400.0
+ARQ_CONTROL_PACKET_TTL_SECONDS = 1200.0
+ARQ_MAX_DATA_RETRIES = 120
+
+# Maximum out-of-order gap ahead of rcvNxt that can trigger STREAM_DATA_NACK.
+# 0 disables NACK generation entirely.
+# Keep this small so only near-miss gaps cause early resend requests.
+ARQ_DATA_NACK_MAX_GAP = 64
+
+# Minimum seconds between repeated NACKs for the same missing sequence number.
+# Clamped to [0.1s, 30s].
+ARQ_DATA_NACK_INITIAL_DELAY_SECONDS = 0.4
+ARQ_DATA_NACK_REPEAT_SECONDS = 0.8
+
+ARQ_TERMINAL_DRAIN_TIMEOUT_SECONDS = 120.0
+ARQ_TERMINAL_ACK_WAIT_TIMEOUT_SECONDS = 90.0
+
+# ------------------------------------------------------------------------------
+# 9) Logging
+# What this section does:
+# - Controls server logger verbosity.
+# ------------------------------------------------------------------------------
+
+# Typical values: DEBUG, INFO, WARN, ERROR
+LOG_LEVEL = "INFO"
+
+# ------------------------------------------------------------------------------
+
+CONFIG_VERSION = "10"
