@@ -81,6 +81,56 @@ type Server struct {
 	lastDeferredDropLogUnix  atomic.Int64
 	pongNonce                atomic.Uint32
 	invalidDropMode          atomic.Uint32
+
+	// Observability counters (Phase 8). Incremented by the corresponding
+	// hardening paths so operators can observe how often each guard fires
+	// without having to grep logs. Read via Stats(). The stream-cap
+	// rejection counter lives on sessionStore (where the cap is enforced)
+	// and the fragment-conflict counter lives on each fragmentStore
+	// instance; both are surfaced through Stats().
+	dnsResponseOversize     atomic.Uint64
+	fragmentInvalidHeader   atomic.Uint64
+	upstreamPanicsRecovered atomic.Uint64
+	cleanupPanicsRecovered  atomic.Uint64
+}
+
+// Stats is a point-in-time snapshot of operational counters maintained by the
+// server. The values are monotonically non-decreasing for the lifetime of the
+// process (counters are never reset). Stats() is safe to call from any
+// goroutine.
+type Stats struct {
+	DroppedPackets          uint64
+	DeferredDroppedPackets  uint64
+	StreamCapRejections     uint64
+	DNSResponseOversize     uint64
+	FragmentConflictDrops   uint64
+	FragmentInvalidHeader   uint64
+	UpstreamPanicsRecovered uint64
+	CleanupPanicsRecovered  uint64
+}
+
+// Stats returns a consistent snapshot of the server's observability counters.
+func (s *Server) Stats() Stats {
+	if s == nil {
+		return Stats{}
+	}
+	var fragmentConflicts uint64
+	if s.dnsFragments != nil {
+		fragmentConflicts += s.dnsFragments.ConflictCount()
+	}
+	if s.socks5Fragments != nil {
+		fragmentConflicts += s.socks5Fragments.ConflictCount()
+	}
+	return Stats{
+		DroppedPackets:          s.droppedPackets.Load(),
+		DeferredDroppedPackets:  s.deferredDroppedPackets.Load(),
+		StreamCapRejections:     s.sessions.streamCapRejectionsCount(),
+		DNSResponseOversize:     s.dnsResponseOversize.Load(),
+		FragmentConflictDrops:   fragmentConflicts,
+		FragmentInvalidHeader:   s.fragmentInvalidHeader.Load(),
+		UpstreamPanicsRecovered: s.upstreamPanicsRecovered.Load(),
+		CleanupPanicsRecovered:  s.cleanupPanicsRecovered.Load(),
+	}
 }
 
 type request struct {
@@ -118,7 +168,7 @@ func New(cfg config.ServerConfig, log *logger.Logger, codec *security.Codec) *Se
 		log:                    log,
 		codec:                  codec,
 		domainMatcher:          domainMatcher.New(cfg.Domain, cfg.MinVPNLabelLength),
-		sessions:               newSessionStore(cfg.SessionOrphanQueueInitialCap, cfg.StreamQueueInitialCapacity, cfg.SessionInitReuseTTL(), cfg.RecentlyClosedStreamTTL(), cfg.RecentlyClosedStreamCap),
+		sessions:               newSessionStore(cfg.SessionOrphanQueueInitialCap, cfg.StreamQueueInitialCapacity, cfg.SessionInitReuseTTL(), cfg.RecentlyClosedStreamTTL(), cfg.RecentlyClosedStreamCap, cfg.MaxStreamsPerSession),
 		deferredDNSSession:     newDeferredSessionProcessor(dnsDeferredWorkers, dnsDeferredQueue, log),
 		deferredConnectSession: newDeferredSessionProcessor(connectDeferredWorkers, connectDeferredQueue, log),
 		invalidCookieTracker:   newInvalidCookieTracker(),

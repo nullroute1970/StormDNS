@@ -40,6 +40,8 @@ type ServerConfig struct {
 	DNSFragmentStoreCapacity          int      `toml:"DNS_FRAGMENT_STORE_CAPACITY"`
 	SOCKS5FragmentStoreCapacity       int      `toml:"SOCKS5_FRAGMENT_STORE_CAPACITY"`
 	MaxPacketSize                     int      `toml:"MAX_PACKET_SIZE"`
+	MaxStreamsPerSession              int      `toml:"MAX_STREAMS_PER_SESSION"`
+	MaxDNSResponseBytes               int      `toml:"MAX_DNS_RESPONSE_BYTES"`
 	DropLogIntervalSecs               float64  `toml:"DROP_LOG_INTERVAL_SECONDS"`
 	InvalidCookieWindowSecs           float64  `toml:"INVALID_COOKIE_WINDOW_SECONDS"`
 	InvalidCookieErrorThreshold       int      `toml:"INVALID_COOKIE_ERROR_THRESHOLD"`
@@ -122,6 +124,8 @@ func defaultServerConfig() ServerConfig {
 		DNSFragmentStoreCapacity:          256,
 		SOCKS5FragmentStoreCapacity:       512,
 		MaxPacketSize:                     65535,
+		MaxStreamsPerSession:              4096,
+		MaxDNSResponseBytes:               32768,
 		DropLogIntervalSecs:               2.0,
 		InvalidCookieWindowSecs:           2.0,
 		InvalidCookieErrorThreshold:       10,
@@ -271,6 +275,8 @@ func finalizeServerConfig(cfg ServerConfig) (ServerConfig, error) {
 	if cfg.MaxPacketSize <= 0 {
 		cfg.MaxPacketSize = 65535
 	}
+	cfg.MaxStreamsPerSession = clampInt(defaultIntBelow(cfg.MaxStreamsPerSession, 1, 4096), 16, 65535)
+	cfg.MaxDNSResponseBytes = clampInt(defaultIntBelow(cfg.MaxDNSResponseBytes, 1, 32768), 512, 65535)
 
 	if cfg.DropLogIntervalSecs <= 0 {
 		cfg.DropLogIntervalSecs = 2.0

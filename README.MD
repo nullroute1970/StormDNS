@@ -149,6 +149,28 @@ bash <(curl -Ls https://raw.githubusercontent.com/nullroute1970/StormDNS/main/se
 
 The script handles installation and configuration automatically. When it finishes, the server starts and the **encryption key** is shown in the terminal log and also written to `encrypt_key.txt` next to the executable. Keep this key safe.
 
+##### Installer command-line options
+
+The installer also accepts the following options, which can be passed directly through the same `bash <(curl ...)` command:
+
+| Option | Description |
+| --- | --- |
+| `-v <VERSION>`, `--version <VERSION>` | Install a specific StormDNS release tag (e.g. `v1.2.3`) instead of the latest release. |
+| `-u`, `--uninstall` | Uninstall StormDNS: stop and remove the `stormdns` systemd service, drop the kernel/limit tunings, and clean up the binary, `server_config.toml`, and `encrypt_key.txt` in the current directory. |
+| `-h`, `--help` | Show usage help and exit. |
+
+Examples:
+
+```bash
+# Install a specific release version:
+bash <(curl -Ls https://raw.githubusercontent.com/nullroute1970/StormDNS/main/server_linux_install.sh) --version v1.2.3
+
+# Uninstall StormDNS (run from the same directory used during installation):
+bash <(curl -Ls https://raw.githubusercontent.com/nullroute1970/StormDNS/main/server_linux_install.sh) --uninstall
+```
+
+> Note: For uninstall, run the command from the same working directory where StormDNS was originally installed so the script can locate the binary, config file, and encryption key.
+
 #### Step 1.2.2: Important Notes After Installation
 
 - During installation, you will be asked for a domain. It must be the same delegated subdomain you configured in the `NS` record, for example `v.example.com`.
@@ -505,15 +527,18 @@ These settings are critical on the server:
 | `MIN_DOWNLOAD_MTU` | `100` | positive integer | Smallest download MTU the client accepts during resolver testing. |
 | `MAX_UPLOAD_MTU` | `64` | positive integer | Upper bound for upload MTU testing. |
 | `MAX_DOWNLOAD_MTU` | `140` | positive integer | Upper bound for download MTU testing. |
-| `MTU_TEST_RETRIES` | `2` | if invalid, fallback applies | Number of retries for each MTU probe. |
-| `MTU_TEST_TIMEOUT` | `4.0` | if invalid, fallback applies | Timeout for a single MTU probe. |
-| `MTU_TEST_PARALLELISM` | `16` | if invalid, fallback applies | Number of resolvers tested in parallel during MTU scanning.<br>Higher values scan faster but use more CPU/network and may produce more noisy failures. |
+| `MTU_TEST_RETRIES_RESOLVERS` | `3` | if invalid, fallback applies | Number of retries for each MTU probe when `STARTUP_MODE = "resolvers"` (full scan from `client_resolvers.txt`). |
+| `MTU_TEST_TIMEOUT_RESOLVERS` | `2.0` | if invalid, fallback applies | Timeout for a single MTU probe when `STARTUP_MODE = "resolvers"`. |
+| `MTU_TEST_PARALLELISM_RESOLVERS` | `100` | if invalid, fallback applies | Number of resolvers tested in parallel during MTU scanning when `STARTUP_MODE = "resolvers"`.<br>Higher values scan faster but use more CPU/network and may produce more noisy failures. |
+| `MTU_TEST_RETRIES_LOGS` | `5` | if invalid, fallback applies | Number of retries for each MTU probe when `STARTUP_MODE = "logs"` (fast start from cached log entries). |
+| `MTU_TEST_TIMEOUT_LOGS` | `2.0` | if invalid, fallback applies | Timeout for a single MTU probe when `STARTUP_MODE = "logs"`. |
+| `MTU_TEST_PARALLELISM_LOGS` | `32` | if invalid, fallback applies | Number of resolvers tested in parallel during MTU scanning when `STARTUP_MODE = "logs"`. |
 
 ### 3.4.7) 🧵 Runtime Workers, Queues, and Timers
 
 | Parameter | Sample Value | Allowed Values / Real Behavior | Full Explanation |
 | :--- | :--- | :--- | :--- |
-| `RX_TX_WORKERS` | `6` | if invalid, fallback applies | Number of shared runtime workers used for both UDP tunnel reads and writes. |
+| `RX_TX_WORKERS` | `4` | if invalid, fallback applies | Number of shared runtime workers used for both UDP tunnel reads and writes. |
 | `TUNNEL_PROCESS_WORKERS` | `4` | if invalid, fallback applies | Number of workers processing tunnel packets after read. |
 | `TUNNEL_PACKET_TIMEOUT_SECONDS` | `8.0` | if invalid, fallback applies | Overall timeout for tunnel packet handling. |
 | `DISPATCHER_IDLE_POLL_INTERVAL_SECONDS` | `0.020` | if invalid, fallback applies | When there is nothing to send, the dispatcher sleeps for this interval before polling again. |
@@ -706,17 +731,17 @@ MAX_UPLOAD_MTU=30
 MAX_DOWNLOAD_MTU=40
 ```
 
-- Increase the number of parallel resolver checks:
+- Increase the number of parallel resolver checks (this section assumes a full `STARTUP_MODE = "resolvers"` scan):
 
 ```toml
-MTU_TEST_PARALLELISM = 200
+MTU_TEST_PARALLELISM_RESOLVERS = 200
 ```
 
 - Reduce retries and timeout to speed up the scan. With these settings you may miss some slightly slower but still healthy resolvers, so increase them if you want more accurate results.
 
 ```toml
-MTU_TEST_RETRIES = 1
-MTU_TEST_TIMEOUT = 1.0
+MTU_TEST_RETRIES_RESOLVERS = 1
+MTU_TEST_TIMEOUT_RESOLVERS = 1.0
 ```
 
 > ⚠️ **Important note:** You must already have a server running and must place its key and domain into `client_config.toml` before doing this. Otherwise the client cannot perform MTU tests correctly and will likely mark all resolvers invalid.

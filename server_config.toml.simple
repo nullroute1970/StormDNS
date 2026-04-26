@@ -89,6 +89,19 @@ STREAM_QUEUE_INITIAL_CAPACITY = 256
 DNS_FRAGMENT_STORE_CAPACITY = 512
 SOCKS5_FRAGMENT_STORE_CAPACITY = 1024
 
+# Maximum number of concurrent data streams the server will keep open per
+# session. Bounds memory under attacker-driven stream creation. The virtual
+# control stream (stream 0) is always allowed and never counted against this
+# cap. Range: 16..65535. Default: 4096.
+MAX_STREAMS_PER_SESSION = 4096
+
+# Hard upper bound (in bytes) on the size of an upstream DNS response that
+# the server will fragment and tunnel back to the client. Responses larger
+# than this are dropped before fragmentation, preventing attacker-shaped
+# queries from forcing the server to allocate up to 256 fragments per
+# response. Range: 512..65535. Default: 32768.
+MAX_DNS_RESPONSE_BYTES = 32768
+
 # ------------------------------------------------------------------------------
 # 4) Session Lifecycle & Invalid-Cookie Handling
 # What this section does:

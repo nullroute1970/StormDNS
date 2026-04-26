@@ -190,10 +190,20 @@ func (s *Server) dialExternalSOCKS5TargetContext(ctx context.Context, targetPayl
 		return nil, err
 	}
 
+	// Watchdog: cancel the in-progress SOCKS5 handshake if ctx is cancelled.
+	// Stops on function return regardless of outcome so the goroutine never
+	// outlives the handshake (previously it lingered until ctx cancellation
+	// — i.e. session lifetime — even after a successful handshake handed
+	// the connection off to the caller).
+	stopWatchdog := make(chan struct{})
+	defer close(stopWatchdog)
 	if ctx != nil {
 		go func(c net.Conn) {
-			<-ctx.Done()
-			_ = c.Close()
+			select {
+			case <-ctx.Done():
+				_ = c.Close()
+			case <-stopWatchdog:
+			}
 		}(conn)
 	}
 

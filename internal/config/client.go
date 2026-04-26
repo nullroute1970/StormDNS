@@ -68,9 +68,17 @@ type ClientConfig struct {
 	MinDownloadMTU                        int               `toml:"MIN_DOWNLOAD_MTU"`
 	MaxUploadMTU                          int               `toml:"MAX_UPLOAD_MTU"`
 	MaxDownloadMTU                        int               `toml:"MAX_DOWNLOAD_MTU"`
-	MTUTestRetries                        int               `toml:"MTU_TEST_RETRIES"`
-	MTUTestTimeout                        float64           `toml:"MTU_TEST_TIMEOUT"`
-	MTUTestParallelism                    int               `toml:"MTU_TEST_PARALLELISM"`
+	MTUTestRetriesResolvers               int               `toml:"MTU_TEST_RETRIES_RESOLVERS"`
+	MTUTestRetriesLogs                    int               `toml:"MTU_TEST_RETRIES_LOGS"`
+	MTUTestTimeoutResolvers               float64           `toml:"MTU_TEST_TIMEOUT_RESOLVERS"`
+	MTUTestTimeoutLogs                    float64           `toml:"MTU_TEST_TIMEOUT_LOGS"`
+	MTUTestParallelismResolvers           int               `toml:"MTU_TEST_PARALLELISM_RESOLVERS"`
+	MTUTestParallelismLogs                int               `toml:"MTU_TEST_PARALLELISM_LOGS"`
+	// Active MTU test parameters resolved from the startup mode at runtime.
+	// Populated by ApplyStartupModeMTU after the mode is known. Not loaded from TOML.
+	MTUTestRetries     int     `toml:"-"`
+	MTUTestTimeout     float64 `toml:"-"`
+	MTUTestParallelism int     `toml:"-"`
 	RX_TX_Workers                         int               `toml:"RX_TX_WORKERS"`
 	LegacyTunnelReaderWorkers             int               `toml:"TUNNEL_READER_WORKERS"`
 	LegacyTunnelWriterWorkers             int               `toml:"TUNNEL_WRITER_WORKERS"`
@@ -184,11 +192,14 @@ func defaultClientConfig() ClientConfig {
 		MinDownloadMTU:                        1000,
 		MaxUploadMTU:                          200,
 		MaxDownloadMTU:                        4000,
-		MTUTestRetries:                        5,
-		MTUTestTimeout:                        2.0,
-		MTUTestParallelism:                    100,
-		RX_TX_Workers:                         32,
-		TunnelProcessWorkers:                  32,
+		MTUTestRetriesResolvers:               3,
+		MTUTestRetriesLogs:                    5,
+		MTUTestTimeoutResolvers:               2.0,
+		MTUTestTimeoutLogs:                    2.0,
+		MTUTestParallelismResolvers:           100,
+		MTUTestParallelismLogs:                32,
+		RX_TX_Workers:                         4,
+		TunnelProcessWorkers:                  4,
 		TunnelPacketTimeoutSec:                10.0,
 		DispatcherIdlePollIntervalSeconds:     0.020,
 		PingAggressiveIntervalSeconds:         0.200,
@@ -248,6 +259,26 @@ func LoadClientConfig(filename string) (ClientConfig, error) {
 		return cfg, err
 	}
 	return finalizeClientConfig(cfg)
+}
+
+// ApplyStartupModeMTU resolves the active MTU-test parameters (MTUTestRetries,
+// MTUTestTimeout, MTUTestParallelism) from the per-mode configuration values
+// based on the supplied startup mode. Any value other than "logs" is treated as
+// the resolvers mode.
+func (cfg *ClientConfig) ApplyStartupModeMTU(mode string) {
+	if cfg == nil {
+		return
+	}
+	switch strings.ToLower(strings.TrimSpace(mode)) {
+	case "logs":
+		cfg.MTUTestRetries = cfg.MTUTestRetriesLogs
+		cfg.MTUTestTimeout = cfg.MTUTestTimeoutLogs
+		cfg.MTUTestParallelism = cfg.MTUTestParallelismLogs
+	default:
+		cfg.MTUTestRetries = cfg.MTUTestRetriesResolvers
+		cfg.MTUTestTimeout = cfg.MTUTestTimeoutResolvers
+		cfg.MTUTestParallelism = cfg.MTUTestParallelismResolvers
+	}
 }
 
 func loadClientConfigFile(filename string) (ClientConfig, error) {
@@ -414,15 +445,21 @@ func finalizeClientConfig(cfg ClientConfig) (ClientConfig, error) {
 		return cfg, fmt.Errorf("MIN_DOWNLOAD_MTU cannot be greater than MAX_DOWNLOAD_MTU")
 	}
 
-	cfg.MTUTestRetries = defaultIntBelow(cfg.MTUTestRetries, 1, 1)
-	cfg.MTUTestTimeout = defaultFloatAtMostZero(cfg.MTUTestTimeout, 1.0)
-	cfg.MTUTestParallelism = defaultIntBelow(cfg.MTUTestParallelism, 1, 1)
+	cfg.MTUTestRetriesResolvers = defaultIntBelow(cfg.MTUTestRetriesResolvers, 1, 3)
+	cfg.MTUTestRetriesLogs = defaultIntBelow(cfg.MTUTestRetriesLogs, 1, 5)
+	cfg.MTUTestTimeoutResolvers = defaultFloatAtMostZero(cfg.MTUTestTimeoutResolvers, 2.0)
+	cfg.MTUTestTimeoutLogs = defaultFloatAtMostZero(cfg.MTUTestTimeoutLogs, 2.0)
+	cfg.MTUTestParallelismResolvers = defaultIntBelow(cfg.MTUTestParallelismResolvers, 1, 100)
+	cfg.MTUTestParallelismLogs = defaultIntBelow(cfg.MTUTestParallelismLogs, 1, 32)
+	// Default the active MTU-test trio to the resolvers-mode values until the
+	// caller selects a startup mode via ApplyStartupModeMTU.
+	cfg.ApplyStartupModeMTU("resolvers")
 	legacyRX_TX_Workers := max(cfg.LegacyTunnelReaderWorkers, cfg.LegacyTunnelWriterWorkers)
 	if !cfg.explicitRX_TX_Workers && legacyRX_TX_Workers > 0 {
 		cfg.RX_TX_Workers = legacyRX_TX_Workers
 	}
 
-	cfg.RX_TX_Workers = clampInt(defaultIntBelow(cfg.RX_TX_Workers, 1, 6), 1, 64)
+	cfg.RX_TX_Workers = clampInt(defaultIntBelow(cfg.RX_TX_Workers, 1, 4), 1, 64)
 	cfg.TunnelProcessWorkers = max(clampInt(defaultIntBelow(cfg.TunnelProcessWorkers, 1, 4), 1, 64), cfg.RX_TX_Workers)
 
 	cfg.TunnelPacketTimeoutSec = clampFloat(defaultFloatAtMostZero(cfg.TunnelPacketTimeoutSec, 8.0), 0.5, 120.0)

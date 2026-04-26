@@ -237,10 +237,15 @@ MAX_UPLOAD_MTU = 200
 MAX_DOWNLOAD_MTU = 4000
 
 # MTU probe retries, timeout, and parallelism.
+# Separate values are used depending on STARTUP_MODE so a fast
+# log-based startup can use lighter probes than a full resolvers scan.
 # Retries and parallelism must be >= 1.
-MTU_TEST_RETRIES = 5
-MTU_TEST_TIMEOUT = 2.0
-MTU_TEST_PARALLELISM = 100
+MTU_TEST_RETRIES_RESOLVERS = 3
+MTU_TEST_TIMEOUT_RESOLVERS = 2.0
+MTU_TEST_PARALLELISM_RESOLVERS = 100
+MTU_TEST_RETRIES_LOGS = 5
+MTU_TEST_TIMEOUT_LOGS = 2.0
+MTU_TEST_PARALLELISM_LOGS = 32
 
 # ------------------------------------------------------------------------------
 # 7) Runtime Workers, Queues, and Timers
@@ -252,8 +257,8 @@ MTU_TEST_PARALLELISM = 100
 
 # Async tunnel runtime worker counts.
 # Each must be >= 1.
-RX_TX_WORKERS = 32
-TUNNEL_PROCESS_WORKERS = 32
+RX_TX_WORKERS = 4
+TUNNEL_PROCESS_WORKERS = 4
 
 # Per-packet tunnel timeout used in async runtime paths.
 # Clamped to [0.5s, 120s].

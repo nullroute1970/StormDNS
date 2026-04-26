@@ -9,6 +9,7 @@ package fragmentstore
 
 import (
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -17,6 +18,10 @@ type Store[K comparable] struct {
 	items     map[K]*entry
 	completed map[K]time.Time
 	lastPurge time.Time
+	// conflicts counts incoming fragments that were dropped because their
+	// totalFragments did not match an in-flight assembly for the same key.
+	// Useful as an attack/buggy-peer signal; surfaced via ConflictCount().
+	conflicts atomic.Uint64
 }
 
 type entry struct {
@@ -75,12 +80,20 @@ func (s *Store[K]) Collect(key K, payload []byte, fragmentID uint8, totalFragmen
 	}
 
 	current, ok := s.items[key]
-	if !ok || current.totalFragments != totalFragments {
+	if !ok {
 		current = &entry{
 			createdAt:      now,
 			totalFragments: totalFragments,
 		}
 		s.items[key] = current
+	} else if current.totalFragments != totalFragments {
+		// Conflicting totalFragments for the same key indicates either a
+		// buggy peer or a flooding attack. Drop the in-flight assembly and
+		// the new fragment rather than silently restarting reassembly,
+		// which an attacker could exploit to keep memory occupied.
+		delete(s.items, key)
+		s.conflicts.Add(1)
+		return nil, false, false
 	}
 
 	if current.chunks[fragmentID] == nil {
@@ -123,6 +136,16 @@ func (s *Store[K]) Purge(now time.Time, retention time.Duration) {
 	s.mu.Lock()
 	s.purgeLocked(now, retention)
 	s.mu.Unlock()
+}
+
+// ConflictCount returns the running count of fragments rejected due to a
+// conflicting totalFragments value for an in-flight key. Safe to call from any
+// goroutine.
+func (s *Store[K]) ConflictCount() uint64 {
+	if s == nil {
+		return 0
+	}
+	return s.conflicts.Load()
 }
 
 func (s *Store[K]) Remove(key K) {

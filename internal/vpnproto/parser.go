@@ -15,11 +15,12 @@ import (
 )
 
 var (
-	ErrPacketTooShort     = errors.New("vpn packet too short")
-	ErrInvalidPacketType  = errors.New("invalid vpn packet type")
-	ErrInvalidHeaderCheck = errors.New("invalid vpn header check")
-	ErrInvalidEncodedData = errors.New("invalid encoded vpn labels")
-	ErrCodecUnavailable   = errors.New("vpn codec unavailable")
+	ErrPacketTooShort      = errors.New("vpn packet too short")
+	ErrInvalidPacketType   = errors.New("invalid vpn packet type")
+	ErrInvalidHeaderCheck  = errors.New("invalid vpn header check")
+	ErrInvalidEncodedData  = errors.New("invalid encoded vpn labels")
+	ErrCodecUnavailable    = errors.New("vpn codec unavailable")
+	ErrInvalidFragmentInfo = errors.New("invalid vpn fragment info")
 )
 
 const (
@@ -162,6 +163,14 @@ func parseFrom(data []byte, start int) (Packet, error) {
 		packet.FragmentID = data[offset]
 		packet.TotalFragments = data[offset+1]
 		offset += 2
+		// Defensive validation: when a packet declares actual fragmentation
+		// (TotalFragments > 1), reject any FragmentID outside the valid
+		// range so downstream reassembly never sees out-of-bounds indices.
+		// TotalFragments of 0 or 1 means "single packet, no reassembly" by
+		// existing protocol convention and is left untouched here.
+		if packet.TotalFragments > 1 && packet.FragmentID >= packet.TotalFragments {
+			return Packet{}, ErrInvalidFragmentInfo
+		}
 	}
 
 	if flags&packetFlagCompression != 0 {

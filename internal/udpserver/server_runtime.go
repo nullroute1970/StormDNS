@@ -71,31 +71,59 @@ func (s *Server) sessionCleanupLoop(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case now := <-ticker.C:
-			expired := s.sessions.Cleanup(now, sessionTimeout, closedRetention)
-			idleDeferred := s.sessions.CollectIdleDeferredSessions(now, s.deferredIdleCleanupTimeout(interval, sessionTimeout))
-			s.sessions.SweepTerminalStreams(now, s.cfg.TerminalStreamRetention())
-			if lastRecentlyClosedSweep.IsZero() || now.Sub(lastRecentlyClosedSweep) >= recentlyClosedSweepInterval {
-				s.sessions.SweepRecentlyClosedStreams(now)
-				lastRecentlyClosedSweep = now
-			}
-			s.invalidCookieTracker.Cleanup(now, invalidCookieWindow)
-			s.purgeDNSQueryFragments(now)
-			s.purgeSOCKS5SynFragments(now)
-			for _, idleSession := range idleDeferred {
-				s.cleanupIdleDeferredSession(idleSession.ID, idleSession.lastActivityNano, now)
-			}
-			if len(expired) == 0 {
-				continue
-			}
-			for _, expiredSession := range expired {
-				s.cleanupClosedSession(expiredSession.ID, expiredSession.record)
-			}
-			s.log.Infof(
-				"\U0001F4E1 <green>Expired Sessions Cleaned, Count: <cyan>%d</cyan></green>",
-				len(expired),
-			)
+			// Run one tick under recover() so a panic in any single sweep
+			// (e.g. a malformed entry in the recently-closed table) cannot
+			// take down the entire background cleanup goroutine for the
+			// rest of the process lifetime.
+			s.runSessionCleanupTick(now, sessionTimeout, closedRetention, invalidCookieWindow, recentlyClosedSweepInterval, &lastRecentlyClosedSweep, interval)
 		}
 	}
+}
+
+func (s *Server) runSessionCleanupTick(
+	now time.Time,
+	sessionTimeout time.Duration,
+	closedRetention time.Duration,
+	invalidCookieWindow time.Duration,
+	recentlyClosedSweepInterval time.Duration,
+	lastRecentlyClosedSweep *time.Time,
+	cleanupInterval time.Duration,
+) {
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			s.cleanupPanicsRecovered.Add(1)
+			if s.log != nil {
+				s.log.Errorf(
+					"\U0001F4A5 <red>Session Cleanup Tick Panic Recovered, <yellow>%v</yellow></red>",
+					recovered,
+				)
+			}
+		}
+	}()
+
+	expired := s.sessions.Cleanup(now, sessionTimeout, closedRetention)
+	idleDeferred := s.sessions.CollectIdleDeferredSessions(now, s.deferredIdleCleanupTimeout(cleanupInterval, sessionTimeout))
+	s.sessions.SweepTerminalStreams(now, s.cfg.TerminalStreamRetention())
+	if lastRecentlyClosedSweep.IsZero() || now.Sub(*lastRecentlyClosedSweep) >= recentlyClosedSweepInterval {
+		s.sessions.SweepRecentlyClosedStreams(now)
+		*lastRecentlyClosedSweep = now
+	}
+	s.invalidCookieTracker.Cleanup(now, invalidCookieWindow)
+	s.purgeDNSQueryFragments(now)
+	s.purgeSOCKS5SynFragments(now)
+	for _, idleSession := range idleDeferred {
+		s.cleanupIdleDeferredSession(idleSession.ID, idleSession.lastActivityNano, now)
+	}
+	if len(expired) == 0 {
+		return
+	}
+	for _, expiredSession := range expired {
+		s.cleanupClosedSession(expiredSession.ID, expiredSession.record)
+	}
+	s.log.Infof(
+		"\U0001F4E1 <green>Expired Sessions Cleaned, Count: <cyan>%d</cyan></green>",
+		len(expired),
+	)
 }
 
 func (s *Server) deferredIdleCleanupTimeout(cleanupInterval time.Duration, sessionTimeout time.Duration) time.Duration {

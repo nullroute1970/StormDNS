@@ -65,6 +65,8 @@ type sessionRecord struct {
 	RRStreamID                      int32  // Last served stream ID for RR
 	EnqueueSeq                      uint64 // Global sequence for FIFO inside same priority
 	StreamQueueCap                  int
+	MaxStreams                      int
+	streamCapRejections             *atomic.Uint64
 	StreamsMu                       sync.RWMutex
 	RecentlyClosed                  map[uint16]recentlyClosedStreamRecord
 	RecentlyClosedTTL               time.Duration
@@ -177,9 +179,24 @@ type sessionStore struct {
 	recentClosed           map[uint8]closedSessionRecord
 	orphanQueueCap         int
 	streamQueueCap         int
+	maxStreamsPerSession   int
 	sessionInitTTL         time.Duration
 	recentlyClosedTTL      time.Duration
 	recentlyClosedCap      int
+	// streamCapRejections counts every getOrCreateStream call that was
+	// refused because MaxStreams had been reached. The pointer is shared
+	// with each sessionRecord so the cap-enforcement path can increment it
+	// without holding a back-reference to the store.
+	streamCapRejections atomic.Uint64
+}
+
+// streamCapRejectionsCount returns the running count of stream-cap rejections
+// observed by getOrCreateStream across all sessions in this store.
+func (s *sessionStore) streamCapRejectionsCount() uint64 {
+	if s == nil {
+		return 0
+	}
+	return s.streamCapRejections.Load()
 }
 
 func newSessionStore(orphanQueueCap int, streamQueueCap int, options ...any) *sessionStore {
@@ -193,6 +210,7 @@ func newSessionStore(orphanQueueCap int, streamQueueCap int, options ...any) *se
 	sessionInitTTL := 10 * time.Minute
 	recentlyClosedTTL := 600 * time.Second
 	recentlyClosedCap := 2000
+	maxStreamsPerSession := 0
 	if len(options) > 0 {
 		if v, ok := options[0].(time.Duration); ok && v > 0 {
 			sessionInitTTL = v
@@ -208,16 +226,22 @@ func newSessionStore(orphanQueueCap int, streamQueueCap int, options ...any) *se
 			recentlyClosedCap = v
 		}
 	}
+	if len(options) > 3 {
+		if v, ok := options[3].(int); ok && v > 0 {
+			maxStreamsPerSession = v
+		}
+	}
 	return &sessionStore{
-		bySig:             make(map[[sessionInitDataSize]byte]uint8, 64),
-		recentClosed:      make(map[uint8]closedSessionRecord, 32),
-		cookieIndex:       32,
-		nextID:            1,
-		orphanQueueCap:    orphanQueueCap,
-		streamQueueCap:    streamQueueCap,
-		sessionInitTTL:    sessionInitTTL,
-		recentlyClosedTTL: recentlyClosedTTL,
-		recentlyClosedCap: recentlyClosedCap,
+		bySig:                make(map[[sessionInitDataSize]byte]uint8, 64),
+		recentClosed:         make(map[uint8]closedSessionRecord, 32),
+		cookieIndex:          32,
+		nextID:               1,
+		orphanQueueCap:       orphanQueueCap,
+		streamQueueCap:       streamQueueCap,
+		maxStreamsPerSession: maxStreamsPerSession,
+		sessionInitTTL:       sessionInitTTL,
+		recentlyClosedTTL:    recentlyClosedTTL,
+		recentlyClosedCap:    recentlyClosedCap,
 	}
 }
 
@@ -257,10 +281,12 @@ func (s *sessionStore) findOrCreate(payload []byte, uploadCompressionType uint8,
 		CreatedAt:         now,
 		ReuseUntil:        now.Add(s.sessionInitTTL),
 		Signature:         signature,
-		Streams:           make(map[uint16]*Stream_server),
-		ActiveStreams:     make([]uint16, 0, 8),
-		StreamQueueCap:    s.streamQueueCap,
-		RecentlyClosed:    make(map[uint16]recentlyClosedStreamRecord, 8),
+		Streams:             make(map[uint16]*Stream_server),
+		ActiveStreams:       make([]uint16, 0, 8),
+		StreamQueueCap:      s.streamQueueCap,
+		MaxStreams:          s.maxStreamsPerSession,
+		streamCapRejections: &s.streamCapRejections,
+		RecentlyClosed:      make(map[uint16]recentlyClosedStreamRecord, 8),
 		RecentlyClosedTTL: s.recentlyClosedTTL,
 		RecentlyClosedCap: s.recentlyClosedCap,
 		OrphanQueue:       mlq.New[VpnProto.Packet](s.orphanQueueCap),
@@ -689,6 +715,24 @@ func (r *sessionRecord) getOrCreateStream(streamID uint16, arqConfig arq.Config,
 
 	if s, ok := r.Streams[streamID]; ok {
 		return s
+	}
+
+	// Enforce per-session stream cap to bound memory under attacker-driven
+	// stream creation. Stream 0 is the always-present virtual control stream
+	// and is excluded from the cap so signalling can never be denied.
+	if streamID != 0 && r.MaxStreams > 0 {
+		// len(r.Streams) includes stream 0 when present, so subtract 1 to
+		// count only data streams against the cap.
+		active := len(r.Streams)
+		if _, hasStream0 := r.Streams[0]; hasStream0 {
+			active--
+		}
+		if active >= r.MaxStreams {
+			if r.streamCapRejections != nil {
+				r.streamCapRejections.Add(1)
+			}
+			return nil
+		}
 	}
 
 	delete(r.RecentlyClosed, streamID)

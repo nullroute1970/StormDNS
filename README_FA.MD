@@ -149,6 +149,28 @@ bash <(curl -Ls https://raw.githubusercontent.com/nullroute1970/StormDNS/main/se
 
 این اسکریپت مراحل نصب و پیکربندی را خودکار انجام می‌دهد. بعد از پایان نصب، سرور اجرا می‌شود و **کلید رمزنگاری** در لاگ ترمینال نمایش داده می‌شود و همچنین در فایل `encrypt_key.txt` کنار فایل اجرایی ذخیره می‌گردد — این کلید را در جای امن نگه دارید.
 
+##### آرگومان‌های خط فرمان اسکریپت
+
+اسکریپت نصب از آرگومان‌های زیر پشتیبانی می‌کند که می‌توانید آن‌ها را مستقیماً با همان دستور `bash <(curl ...)` به کار ببرید:
+
+| گزینه | توضیح |
+| --- | --- |
+| `-v <VERSION>`, `--version <VERSION>` | نصب نسخهٔ مشخصی از StormDNS با تگ موردنظر (مثلاً `v1.2.3`) به جای آخرین نسخه. |
+| `-u`, `--uninstall` | حذف کامل StormDNS: متوقف کردن و پاک کردن سرویس `stormdns` در systemd، حذف تنظیمات کرنل/محدودیت‌ها و پاک‌سازی فایل اجرایی، `server_config.toml` و `encrypt_key.txt` در دایرکتوری جاری. |
+| `-h`, `--help` | نمایش راهنما و خروج. |
+
+مثال‌ها:
+
+```bash
+# نصب یک نسخه‌ی خاص:
+bash <(curl -Ls https://raw.githubusercontent.com/nullroute1970/StormDNS/main/server_linux_install.sh) --version v1.2.3
+
+# حذف StormDNS (دستور را در همان دایرکتوری‌ای اجرا کنید که StormDNS را نصب کرده‌اید):
+bash <(curl -Ls https://raw.githubusercontent.com/nullroute1970/StormDNS/main/server_linux_install.sh) --uninstall
+```
+
+> توجه: برای حذف، دستور را در همان دایرکتوری اجرای نصب اولیه اجرا کنید تا اسکریپت بتواند فایل اجرایی، فایل پیکربندی و کلید رمزنگاری را پیدا و پاک کند.
+
 #### گام ۱.۲.۲: نکات مهم پس از نصب
 
 - در هنگام نصب از شما آدرس دامنه پرسیده می‌شود؛ باید همان زیردامنه‌ای باشد که در رکورد `NS` تنظیم کرده‌اید (مثلاً `v.example.com`).
@@ -492,9 +514,12 @@ sudo journalctl -u stormdns-client -f
 | `MIN_DOWNLOAD_MTU` | `100` | نباید منفی باشد | همان مفهوم برای download.<br>اگر مقدار خیلی بالا باشد، resolverهای بیشتری از همان اول حذف می‌شوند. |
 | `MAX_UPLOAD_MTU` | `150` | نباید از `MIN_UPLOAD_MTU` کوچک‌تر باشد | سقف جست‌وجوی MTU برای upload در تست اولیه.<br>بازه‌ی خیلی بزرگ startup را طولانی‌تر می‌کند. |
 | `MAX_DOWNLOAD_MTU` | `500` | نباید از `MIN_DOWNLOAD_MTU` کوچک‌تر باشد | سقف جست‌وجوی MTU برای download.<br>اگر می‌دانید شبکه شما محدود است، کوچک‌تر کردن این مقدار startup را سریع‌تر می‌کند. |
-| `MTU_TEST_RETRIES` | `2` | اگر کمتر از `1` باشد، fallback اعمال می‌شود | هر probe MTU چند بار retry شود.<br>روی resolverهای پر loss عدد بالاتر می‌تواند مفید باشد، ولی startup را کندتر می‌کند. |
-| `MTU_TEST_TIMEOUT` | `2.0` | اگر `<=0` باشد، fallback اعمال می‌شود | timeout هر probe در تست MTU است.<br>اگر شبکه شما دیرپاسخ است، این مقدار خیلی کم باعث حذف resolverهای سالم می‌شود. |
-| `MTU_TEST_PARALLELISM` | `32` | اگر کمتر از `1` باشد، fallback اعمال می‌شود | چند تست MTU هم‌زمان انجام شوند.<br>عدد بالا startup را سریع‌تر می‌کند ولی CPU و ترافیک بیشتری می‌سازد. |
+| `MTU_TEST_RETRIES_RESOLVERS` | `3` | اگر کمتر از `1` باشد، fallback اعمال می‌شود | تعداد retry هر probe MTU وقتی `STARTUP_MODE = "resolvers"` (اسکن کامل از روی `client_resolvers.txt`).<br>روی resolverهای پر loss عدد بالاتر می‌تواند مفید باشد، ولی startup را کندتر می‌کند. |
+| `MTU_TEST_TIMEOUT_RESOLVERS` | `2.0` | اگر `<=0` باشد، fallback اعمال می‌شود | timeout هر probe در تست MTU وقتی `STARTUP_MODE = "resolvers"`.<br>اگر شبکه شما دیرپاسخ است، این مقدار خیلی کم باعث حذف resolverهای سالم می‌شود. |
+| `MTU_TEST_PARALLELISM_RESOLVERS` | `100` | اگر کمتر از `1` باشد، fallback اعمال می‌شود | تعداد تست‌های هم‌زمان MTU وقتی `STARTUP_MODE = "resolvers"`.<br>عدد بالا startup را سریع‌تر می‌کند ولی CPU و ترافیک بیشتری می‌سازد. |
+| `MTU_TEST_RETRIES_LOGS` | `5` | اگر کمتر از `1` باشد، fallback اعمال می‌شود | تعداد retry هر probe MTU وقتی `STARTUP_MODE = "logs"` (راه‌اندازی سریع از روی resolverهای کش‌شده در logها). |
+| `MTU_TEST_TIMEOUT_LOGS` | `2.0` | اگر `<=0` باشد، fallback اعمال می‌شود | timeout هر probe در تست MTU وقتی `STARTUP_MODE = "logs"`. |
+| `MTU_TEST_PARALLELISM_LOGS` | `32` | اگر کمتر از `1` باشد، fallback اعمال می‌شود | تعداد تست‌های هم‌زمان MTU وقتی `STARTUP_MODE = "logs"`. |
 
 ### ۳.۴.۷) بخش ⚙️ Workerها، queueها و زمان‌بندی runtime
 
@@ -692,17 +717,17 @@ MAX_UPLOAD_MTU=30
 MAX_DOWNLOAD_MTU=40
 ```
 
-- افزایش تعداد بررسی همزمان ریزالورها:
+- افزایش تعداد بررسی همزمان ریزالورها (این بخش را با `STARTUP_MODE = "resolvers"` و اسکن کامل اجرا می‌کنیم):
 
 ```toml
-MTU_TEST_PARALLELISM = 200
+MTU_TEST_PARALLELISM_RESOLVERS = 200
 ```
 
 - کاهش تعداد تلاش برای هر ریزالور و کاهش timeout برای سرعت بخشیدن به تست، البته با این تنظیمات ممکن است ریزالورهای سالمی که کمی کند هستند را از دست بدهید، پس اگر میخواهید دقیق تر تست کنید این مقادیر را کمی بالاتر ببرید.
 
 ```toml
-MTU_TEST_RETRIES = 1
-MTU_TEST_TIMEOUT = 1.0
+MTU_TEST_RETRIES_RESOLVERS = 1
+MTU_TEST_TIMEOUT_RESOLVERS = 1.0
 ```
 
 > ⚠️ **نکته مهم:** حتما باید قبل از اینکار یک سرور را راه اندازی کنید و کلید و آدرس دامنه آن را در `client_config.toml` وارد کنید، در غیر این صورت کلاینت نمی‌تواند تست MTU را انجام دهد و همه ریزالورها را نامعتبر تشخیص می‌دهد.

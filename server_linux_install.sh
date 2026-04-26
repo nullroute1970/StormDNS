@@ -52,44 +52,119 @@ detect_legacy_linux() {
 }
 select_release_artifact() {
   local arch="$1"
+  local version="${2:-}"
   local legacy=0
   if detect_legacy_linux; then
     legacy=1
     log_info "Legacy system detected (broader Linux compatibility mode)."
   fi
 
+  local base_url
+  if [[ -n "$version" ]]; then
+    base_url="https://github.com/nullroute1970/StormDNS/releases/download/${version}"
+    log_info "Targeting StormDNS release: ${version}"
+  else
+    base_url="https://github.com/nullroute1970/StormDNS/releases/latest/download"
+  fi
+
   case "$arch" in
     aarch64|arm64)
       if [[ $legacy -eq 1 ]]; then
-        URL="https://github.com/nullroute1970/StormDNS/releases/latest/download/StormDNS_Server_Linux-Legacy_ARM64.zip"
         PREFIX="StormDNS_Server_Linux-Legacy_ARM64"
       else
-        URL="https://github.com/nullroute1970/StormDNS/releases/latest/download/StormDNS_Server_Linux_ARM64.zip"
         PREFIX="StormDNS_Server_Linux_ARM64"
       fi
       ;;
     armv7l|armv7|armhf)
-      URL="https://github.com/nullroute1970/StormDNS/releases/latest/download/StormDNS_Server_Linux_ARMV7.zip"
       PREFIX="StormDNS_Server_Linux_ARMV7"
       ;;
     x86_64|amd64)
       if [[ $legacy -eq 1 ]]; then
-        URL="https://github.com/nullroute1970/StormDNS/releases/latest/download/StormDNS_Server_Linux-Legacy_AMD64.zip"
         PREFIX="StormDNS_Server_Linux-Legacy_AMD64"
       else
-        URL="https://github.com/nullroute1970/StormDNS/releases/latest/download/StormDNS_Server_Linux_AMD64.zip"
         PREFIX="StormDNS_Server_Linux_AMD64"
       fi
       ;;
     i386|i486|i586|i686|x86)
-      URL="https://github.com/nullroute1970/StormDNS/releases/latest/download/StormDNS_Server_Linux_X86.zip"
       PREFIX="StormDNS_Server_Linux_X86"
       ;;
     *)
       log_error "Unsupported architecture: $arch"
       ;;
   esac
+
+  URL="${base_url}/${PREFIX}.zip"
 }
+
+print_usage() {
+  cat <<'USAGE'
+StormDNS Server Linux Installer
+
+Usage:
+  bash <(curl -Ls https://raw.githubusercontent.com/nullroute1970/StormDNS/main/server_linux_install.sh) [OPTIONS]
+
+Options:
+  -v, --version <VERSION>   Install a specific StormDNS release (tag), e.g. v1.2.3.
+                            If omitted, the latest release is installed.
+  -u, --uninstall           Uninstall StormDNS: stop and remove the systemd
+                            service, drop kernel/limit tunings, and clean up
+                            binaries and config files in the install directory.
+  -h, --help                Show this help message and exit.
+
+Examples:
+  # Install the latest release (default behavior):
+  bash <(curl -Ls https://raw.githubusercontent.com/nullroute1970/StormDNS/main/server_linux_install.sh)
+
+  # Install a specific release version:
+  bash <(curl -Ls https://raw.githubusercontent.com/nullroute1970/StormDNS/main/server_linux_install.sh) --version v1.2.3
+
+  # Uninstall StormDNS:
+  bash <(curl -Ls https://raw.githubusercontent.com/nullroute1970/StormDNS/main/server_linux_install.sh) --uninstall
+USAGE
+}
+
+ACTION="install"
+TARGET_VERSION=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -v|--version)
+      [[ $# -ge 2 ]] || { echo "Error: $1 requires a value" >&2; print_usage; exit 2; }
+      TARGET_VERSION="$2"
+      shift 2
+      ;;
+    --version=*)
+      TARGET_VERSION="${1#*=}"
+      shift
+      ;;
+    -u|--uninstall)
+      ACTION="uninstall"
+      shift
+      ;;
+    -h|--help)
+      print_usage
+      exit 0
+      ;;
+    --)
+      shift
+      break
+      ;;
+    *)
+      echo "Error: unknown option: $1" >&2
+      print_usage
+      exit 2
+      ;;
+  esac
+done
+
+if [[ "$ACTION" == "uninstall" && -n "$TARGET_VERSION" ]]; then
+  echo "Error: --version cannot be combined with --uninstall" >&2
+  exit 2
+fi
+
+if [[ -n "$TARGET_VERSION" && ! "$TARGET_VERSION" =~ ^[A-Za-z0-9._+-]+$ ]]; then
+  echo "Error: invalid version tag: $TARGET_VERSION" >&2
+  exit 2
+fi
 
 if [[ "${EUID}" -ne 0 ]]; then
   log_error "Run this script as root (sudo)."
@@ -102,9 +177,6 @@ if [[ "$INSTALL_DIR" == /dev/fd* || "$INSTALL_DIR" == /proc/*/fd* ]]; then
 fi
 log_info "Installation directory: $INSTALL_DIR"
 cd "$INSTALL_DIR" || log_error "Cannot access install directory: $INSTALL_DIR"
-if [[ -f "server_config.toml" && -f "server_config.toml.backup" ]]; then
-  log_error "Both server_config.toml and server_config.toml.backup exist. Remove one and retry."
-fi
 
 if [[ -f /etc/os-release ]]; then
   # shellcheck disable=SC1091
@@ -120,8 +192,100 @@ echo " | \  / | __ _ ___| |_ ___ _ __ | |  | |  \| | (___  "
 echo " | |\/| |/ _\` / __| __/ _ \ '__|| |  | | . \ |\___ \ "
 echo " | |  | | (_| \__ \ ||  __/ |   | |__| | |\  |____) |"
 echo " |_|  |_|\__,_|___/\__\___|_|   |_____/|_| \_|_____/ "
-echo -e "           StormDNS Server Auto-Installer${NC}"
+if [[ "$ACTION" == "uninstall" ]]; then
+  echo -e "          StormDNS Server Auto-Uninstaller${NC}"
+else
+  echo -e "           StormDNS Server Auto-Installer${NC}"
+fi
 echo -e "${CYAN}------------------------------------------------------${NC}"
+
+do_uninstall() {
+  log_header "Uninstalling StormDNS"
+
+  if systemctl list-unit-files --all 2>/dev/null | grep -q '^stormdns\.service'; then
+    log_info "Stopping and disabling stormdns service..."
+    systemctl stop stormdns 2>/dev/null || true
+    systemctl disable stormdns >/dev/null 2>&1 || true
+    systemctl reset-failed stormdns 2>/dev/null || true
+  else
+    log_info "No stormdns systemd unit found."
+  fi
+
+  if [[ -f /etc/systemd/system/stormdns.service ]]; then
+    rm -f /etc/systemd/system/stormdns.service
+    log_success "Removed /etc/systemd/system/stormdns.service"
+  fi
+  systemctl daemon-reload 2>/dev/null || true
+
+  local pid cmdline
+  while IFS= read -r pid; do
+    [[ -z "$pid" ]] && continue
+    cmdline="$(ps -p "$pid" -o cmd= 2>/dev/null || true)"
+    if echo "$cmdline" | grep -qiE 'stormdns'; then
+      log_warn "Terminating stray StormDNS process (PID: $pid)..."
+      kill "$pid" 2>/dev/null || true
+      sleep 1
+      if kill -0 "$pid" 2>/dev/null; then
+        kill -9 "$pid" 2>/dev/null || true
+      fi
+    fi
+  done < <(pgrep -fi 'stormdns' 2>/dev/null || true)
+
+  if [[ -f /etc/sysctl.d/99-stormdns.conf ]]; then
+    rm -f /etc/sysctl.d/99-stormdns.conf
+    sysctl --system >/dev/null 2>&1 || true
+    log_success "Removed kernel tuning (/etc/sysctl.d/99-stormdns.conf)."
+  fi
+  if [[ -f /etc/security/limits.d/99-stormdns.conf ]]; then
+    rm -f /etc/security/limits.d/99-stormdns.conf
+    log_success "Removed file descriptor limits (/etc/security/limits.d/99-stormdns.conf)."
+  fi
+
+  if [[ -f /etc/systemd/resolved.conf.bak && -f /etc/systemd/resolved.conf ]]; then
+    log_info "Restoring original /etc/systemd/resolved.conf from backup..."
+    mv -f /etc/systemd/resolved.conf.bak /etc/systemd/resolved.conf
+    systemctl restart systemd-resolved 2>/dev/null || true
+  fi
+
+  log_header "Cleaning Install Directory"
+  log_info "Install directory: $INSTALL_DIR"
+  shopt -s nullglob
+  local removed=0
+  for f in \
+    "$INSTALL_DIR"/StormDNS_Server_Linux*_v* \
+    "$INSTALL_DIR"/server_config.toml \
+    "$INSTALL_DIR"/server_config.toml.backup \
+    "$INSTALL_DIR"/server_config.toml.bak \
+    "$INSTALL_DIR"/server_config_*.toml \
+    "$INSTALL_DIR"/encrypt_key.txt \
+    "$INSTALL_DIR"/init_logs.tmp \
+    "$INSTALL_DIR"/*.spec; do
+    if [[ -e "$f" ]]; then
+      rm -f -- "$f"
+      log_info "Removed: $f"
+      removed=1
+    fi
+  done
+  shopt -u nullglob
+  if [[ $removed -eq 0 ]]; then
+    log_warn "No StormDNS files found in $INSTALL_DIR. If you installed elsewhere, run the uninstaller from that directory."
+  fi
+
+  echo -e "\n${CYAN}======================================================${NC}"
+  echo -e " ${GREEN}${BOLD}        STORMDNS UNINSTALL COMPLETED${NC}"
+  echo -e "${CYAN}======================================================${NC}"
+  echo -e "${YELLOW}Note:${NC} Firewall rules for port 53 (UDP/TCP) were left in place."
+  echo -e "      Remove them manually if no longer needed."
+}
+
+if [[ "$ACTION" == "uninstall" ]]; then
+  do_uninstall
+  exit 0
+fi
+
+if [[ -f "server_config.toml" && -f "server_config.toml.backup" ]]; then
+  log_error "Both server_config.toml and server_config.toml.backup exist. Remove one and retry."
+fi
 
 TMP_LOG="init_logs.tmp"
 DOWNLOAD_DIR=""
@@ -470,9 +634,13 @@ root hard nofile 1048576
 EOF
 log_success "Kernel and file descriptor limits configured."
 
-log_header "Fetching Latest Release"
+if [[ -n "$TARGET_VERSION" ]]; then
+  log_header "Fetching Release ${TARGET_VERSION}"
+else
+  log_header "Fetching Latest Release"
+fi
 ARCH="$(uname -m)"
-select_release_artifact "$ARCH"
+select_release_artifact "$ARCH" "$TARGET_VERSION"
 
 if [[ -f "server_config.toml" ]]; then
   mv -f server_config.toml server_config.toml.backup

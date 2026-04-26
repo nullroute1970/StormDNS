@@ -112,6 +112,32 @@ func TestParseRejectsInvalidCheckByte(t *testing.T) {
 	}
 }
 
+func TestParseRejectsOutOfRangeFragmentID(t *testing.T) {
+	// FragmentID == TotalFragments is out of bounds; reassembly would index
+	// past the per-entry chunks array. The parser must reject this.
+	raw := buildRawPacket(t, 2, Enums.PACKET_STREAM_DATA, 1, 1, 5, 5, 0, 3, []byte("x"))
+
+	if _, err := Parse(raw); err != ErrInvalidFragmentInfo {
+		t.Fatalf("unexpected error for FragmentID == TotalFragments: got=%v want=%v", err, ErrInvalidFragmentInfo)
+	}
+
+	raw = buildRawPacket(t, 2, Enums.PACKET_STREAM_DATA, 1, 1, 9, 4, 0, 3, []byte("x"))
+	if _, err := Parse(raw); err != ErrInvalidFragmentInfo {
+		t.Fatalf("unexpected error for FragmentID > TotalFragments: got=%v want=%v", err, ErrInvalidFragmentInfo)
+	}
+}
+
+func TestParseAcceptsSinglePacketFragmentInfo(t *testing.T) {
+	// TotalFragments of 0 and 1 mean "single packet, no reassembly" by
+	// existing protocol convention. Such packets must continue to parse.
+	for _, tf := range []uint8{0, 1} {
+		raw := buildRawPacket(t, 1, Enums.PACKET_STREAM_DATA, 1, 1, 0, tf, 0, 3, []byte("x"))
+		if _, err := Parse(raw); err != nil {
+			t.Fatalf("unexpected error for TotalFragments=%d: %v", tf, err)
+		}
+	}
+}
+
 func TestParseFromLabels(t *testing.T) {
 	codec, err := security.NewCodec(0, "")
 	if err != nil {

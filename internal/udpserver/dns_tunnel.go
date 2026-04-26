@@ -225,6 +225,16 @@ func (s *Server) fragmentDNSResponsePayload(response []byte, mtu int) [][]byte {
 	if len(response) == 0 {
 		return nil
 	}
+	// Enforce an absolute upper bound on the DNS response size before
+	// computing fragment counts. Without this an attacker-controlled query
+	// that yields a very large upstream response can drive the server into
+	// the 256-fragment ceiling path and waste reassembly memory on every
+	// receiver. Returning nil here causes the caller to fall back to a
+	// no-data response.
+	if s != nil && s.cfg.MaxDNSResponseBytes > 0 && len(response) > s.cfg.MaxDNSResponseBytes {
+		s.dnsResponseOversize.Add(1)
+		return nil
+	}
 	limit := mtu
 	if limit < 1 {
 		limit = 256
@@ -274,6 +284,24 @@ func (s *Server) resolveDNSUpstream(rawQuery []byte) ([]byte, error) {
 	resultCh := make(chan []byte, len(s.dnsUpstreamServers))
 	launch := func(upstream string) {
 		go func(addr string) {
+			// Recover so a panicking upstream never deadlocks
+			// resolveDNSUpstream waiting on `received < launched`. The
+			// goroutine must always send exactly one result.
+			defer func() {
+				if recovered := recover(); recovered != nil {
+					if s != nil {
+						s.upstreamPanicsRecovered.Add(1)
+						if s.log != nil {
+							s.log.Errorf(
+								"\U0001F4A5 <red>DNS Upstream Panic Recovered, Addr: <yellow>%s</yellow>, Error: <yellow>%v</yellow></red>",
+								addr,
+								recovered,
+							)
+						}
+					}
+					resultCh <- nil
+				}
+			}()
 			resp, err := s.queryOneUpstream(addr, rawQuery, timeout)
 			if err == nil && len(resp) > 0 {
 				resultCh <- resp

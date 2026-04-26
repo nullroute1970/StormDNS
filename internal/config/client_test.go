@@ -33,8 +33,8 @@ MIN_UPLOAD_MTU = 70
 MIN_DOWNLOAD_MTU = 150
 MAX_UPLOAD_MTU = 150
 MAX_DOWNLOAD_MTU = 200
-MTU_TEST_RETRIES = 2
-MTU_TEST_TIMEOUT = 1.5
+MTU_TEST_RETRIES_RESOLVERS = 2
+MTU_TEST_TIMEOUT_RESOLVERS = 1.5
 `), 0o644); err != nil {
 		t.Fatalf("WriteFile config failed: %v", err)
 	}
@@ -138,9 +138,12 @@ LOCAL_DNS_CACHE_TTL_SECONDS = 0
 LOCAL_DNS_PENDING_TIMEOUT_SECONDS = 0
 LOCAL_DNS_CACHE_FLUSH_INTERVAL_SECONDS = 0
 COMPRESSION_MIN_SIZE = 0
-MTU_TEST_RETRIES = 0
-MTU_TEST_TIMEOUT = 0
-MTU_TEST_PARALLELISM = 0
+MTU_TEST_RETRIES_RESOLVERS = 0
+MTU_TEST_TIMEOUT_RESOLVERS = 0
+MTU_TEST_PARALLELISM_RESOLVERS = 0
+MTU_TEST_RETRIES_LOGS = 0
+MTU_TEST_TIMEOUT_LOGS = 0
+MTU_TEST_PARALLELISM_LOGS = 0
 DATA_ENCRYPTION_METHOD = 1
 ENCRYPTION_KEY = "secret"
 `), 0o644); err != nil {
@@ -173,7 +176,7 @@ ENCRYPTION_KEY = "secret"
 	if cfg.CompressionMinSize != compression.DefaultMinSize {
 		t.Fatalf("unexpected compression min size default: got=%d want=%d", cfg.CompressionMinSize, compression.DefaultMinSize)
 	}
-	if cfg.MTUTestRetries != 1 || cfg.MTUTestTimeout != 1.0 || cfg.MTUTestParallelism != 1 {
+	if cfg.MTUTestRetries != 3 || cfg.MTUTestTimeout != 2.0 || cfg.MTUTestParallelism != 100 {
 		t.Fatalf("unexpected mtu defaults: retries=%d timeout=%v parallelism=%d", cfg.MTUTestRetries, cfg.MTUTestTimeout, cfg.MTUTestParallelism)
 	}
 	if cfg.ProtocolType != "TCP" {

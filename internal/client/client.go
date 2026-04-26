@@ -209,6 +209,7 @@ func Bootstrap(configPath string, overrides config.ClientConfigOverrides) (*Clie
 	if err != nil {
 		return nil, err
 	}
+	cfg.ApplyStartupModeMTU("resolvers")
 
 	log := logger.New("StormDNS Client", cfg.LogLevel)
 
@@ -257,6 +258,7 @@ func BootstrapFromLogs(configPath string, entries []ResolverCacheEntry, override
 	if err != nil {
 		return nil, err
 	}
+	cfg.ApplyStartupModeMTU("logs")
 
 	log := logger.New("StormDNS Client", cfg.LogLevel)
 
