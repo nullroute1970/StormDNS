@@ -1,4 +1,4 @@
-# StormDNS Project 🔐
+# StormDNS Project 🔐 
 
 ## | [نسخه فارسی](https://github.com/nullroute1970/StormDNS/blob/main/README_FA.MD) | [English Version](https://github.com/nullroute1970/StormDNS/blob/main/README.MD) |
 
