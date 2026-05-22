@@ -40,7 +40,7 @@ Financial support is optional. If you want to support ongoing development, use o
 
 | Area | Go To |
 | --- | --- |
-| 🚀 First deployment | [Quick Start](#quick-start), [Server Setup](#server-setup), [Client Setup](#client-setup) |
+| 🚀 First deployment | [Quick Start](#quick-start), [Server Setup](#server-setup), [Container Setup](#container-setup), [Client Setup](#client-setup) |
 | 🌐 DNS/domain requirements | [Network And Domain Requirements](#network-and-domain-requirements) |
 | ⚙️ Configuration | [Configuration Overview](#configuration-overview), [Current Config Keys](#current-config-keys) |
 | 📡 Resolver and MTU tuning | [Resolver, MTU, And Loss Tuning](#resolver-mtu-and-loss-tuning) |
@@ -258,6 +258,50 @@ Every TOML key can be overridden using a lower-case dashed flag generated from t
 
 ```bash
 ./StormDNS_Server_Linux_AMD64 --config server_config.toml --udp-port 5353 --log-level DEBUG
+```
+
+<a id="container-setup"></a>
+
+## 🐳  Container Setup
+
+This container image runs the StormDNS server in a containerized environment and supports multi-architecture builds.
+
+It automatically:
+
+- Boots a default configuration if none exists
+- Injects your domain on first startup
+- Stores persistent data in /data
+
+Supported Architectures
+
+- linux/amd64
+- linux/arm64
+- linux/arm/v7
+
+### Podman
+
+```bash
+podman run -d \
+  --name stormdns \
+  --restart unless-stopped \
+  -e DOMAIN=v.example.com \
+  -v $(pwd)/data:/data:Z \
+  -p 53:53/tcp \
+  -p 53:53/udp \
+  ghcr.io/nullroute1970/stormdns:latest
+```
+
+### 🐳 Docker
+
+```bash
+docker run -d \
+  --name stormdns \
+  --restart unless-stopped \
+  -e DOMAIN=v.example.com \
+  -v $(pwd)/data:/data \
+  -p 53:53/tcp \
+  -p 53:53/udp \
+  ghcr.io/nullroute1970/stormdns:latest
 ```
 
 <a id="client-setup"></a>
