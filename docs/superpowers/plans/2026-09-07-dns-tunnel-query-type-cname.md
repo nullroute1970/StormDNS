@@ -1,6 +1,6 @@
 # DNS Tunnel Query Type: CNAME — Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Let the StormDNS VPN-over-DNS tunnel speak CNAME record type in addition to TXT and NS, so the tunnel works when TXT/NS are blocked, mangled, or fingerprinted in the resolver path and so the query stream can be disguised by mixing all three types (ROTATE).
 
@@ -45,7 +45,7 @@
   - `func isNameRDataRecordType(recordType uint16) bool` — true for NS and CNAME (record types whose rdata is a wire-format name)
   - `ResourceRecord.RDataName` is now populated for NS **and** CNAME records: lowercased dotted name text; `""` when n/a or undecodable (never a parse error).
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `internal/dnsparser/cname_test.go` (package `dnsparser`):
 
@@ -128,12 +128,12 @@ func TestParsePacketToleratesGarbageCNAMERData(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `go test ./internal/dnsparser/ -run TestParsePacketDecodesCNAME -v`
 Expected: FAIL — `RDataName` stays `""` (CNAME decode not implemented).
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 In `internal/dnsparser/parser.go`:
 
@@ -162,7 +162,7 @@ func isNameRDataRecordType(recordType uint16) bool {
 		}
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `go test ./internal/dnsparser/ -run 'TestParsePacketDecodesCNAME|TestParsePacketToleratesGarbageCNAME' -v`
 Expected: PASS (all 3).
@@ -171,7 +171,7 @@ Then full package regression (NS/TXT tests must stay green):
 Run: `go test ./internal/dnsparser/`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add internal/dnsparser/parser.go internal/dnsparser/cname_test.go
@@ -198,7 +198,7 @@ git commit -m "feat: decode CNAME rdata names in DNS parser"
   - `ExtractVPNResponse` (existing, modified): renamed local `fromNS` → `fromNameType`, comment update only
   - Comment-only touch: `decodeNSAnswerName`, `buildNSAnswerName`, `buildNSAnswerChunks` comments mention CNAME sharing.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Append to `internal/dnsparser/cname_test.go`. Extend imports to `"bytes"` and `"errors"`, plus `VpnProto "stormdns-go/internal/vpnproto"`. The helpers `patternedPayload`, `vpnPacketForTest`, `splitLabels` already exist in `ns_test.go` (same package) — reuse them.
 
@@ -356,12 +356,12 @@ func TestExtractVPNResponseIgnoresRecordsAppendedByRecursor(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `go test ./internal/dnsparser/ -run 'TestBuildVPNResponsePacketMirrorsCNAME|TestExtractVPNResponseReadsCNAME|TestExtractVPNResponseNoPayloadFromUnreadableCNAME|TestExtractVPNResponseIgnoresRecordsAppendedByRecursor' -v`
 Expected: FAIL — answers are TXT/NS or missing (mirror not implemented); CNAME extraction errors.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 In `internal/dnsparser/transport.go`:
 
@@ -589,7 +589,7 @@ func extractAnswerUnits(parsed Packet) ([][]byte, bool) {
 	}
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `go test ./internal/dnsparser/ -run 'TestBuildVPNResponsePacketMirrorsCNAME|TestExtractVPNResponseReadsCNAME|TestExtractVPNResponseNoPayloadFromUnreadableCNAME|TestExtractVPNResponseIgnoresRecordsAppendedByRecursor' -v`
 Expected: PASS.
@@ -598,7 +598,7 @@ Then full regression:
 Run: `go test ./internal/dnsparser/ ./internal/client/ ./internal/udpserver/`
 Expected: PASS (existing NS/TXT tests unchanged behavior).
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add internal/dnsparser/transport.go internal/dnsparser/cname_test.go
@@ -617,7 +617,7 @@ git commit -m "feat: CNAME chain tunnel answers (server mirror + name extraction
 - Consumes: nothing new.
 - Produces: `Matcher.Match` returns `ActionProcess` for TXT, NS, **and** CNAME questions with valid labels; other qtypes keep `Reason: "unsupported-qtype"`.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Append to `internal/domainmatcher/matcher_test.go` (mirrors `TestMatcherReturnsProcessForNSQuestion`, which sits at the end of the file):
 
@@ -635,12 +635,12 @@ func TestMatcherReturnsProcessForCNAMEQuestion(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `go test ./internal/domainmatcher/ -run TestMatcherReturnsProcessForCNAMEQuestion -v`
 Expected: FAIL — action `ActionNoData`, reason `unsupported-qtype`.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 In `internal/domainmatcher/matcher.go`, extend the qtype gate:
 ```go
@@ -657,12 +657,12 @@ In `internal/domainmatcher/matcher.go`, extend the qtype gate:
 	}
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `go test ./internal/domainmatcher/ -v`
 Expected: PASS (new + all existing).
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add internal/domainmatcher/matcher.go internal/domainmatcher/matcher_test.go
@@ -682,7 +682,7 @@ git commit -m "feat: accept CNAME qtype as tunnel query"
 **Interfaces:**
 - Produces: `DNS_QUERY_TYPE` accepts `"TXT"` (default), `"NS"`, `"CNAME"`, `"ROTATE"`; anything else → error `invalid DNS_QUERY_TYPE: %q`.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Append to `internal/config/client_test.go` (uses the existing `writeClientConfigForTest` helper):
 
@@ -700,12 +700,12 @@ DOMAINS = ["v.domain.com"]
 }
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `go test ./internal/config/ -run TestClientConfigDNSQueryTypeNormalizesCNAME -v`
 Expected: FAIL — `invalid DNS_QUERY_TYPE: "CNAME"`.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 1. In `internal/config/client.go`, extend the validation switch:
 ```go
@@ -742,12 +742,12 @@ Expected: FAIL — `invalid DNS_QUERY_TYPE: "CNAME"`.
 If tunnel queries never get answers while normal lookups work, some resolver or middlebox in your path may block or mangle TXT queries/answers. Switch the client to NS or CNAME queries (see `DNS_QUERY_TYPE` under [DNS Delegation Details](#dns-delegation-details)); the same delegation records work unchanged. These modes need a server that mirrors the question type, so update the server first.
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `go test ./internal/config/ -v`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add internal/config/client.go internal/config/client_test.go client_config.toml.simple README.MD
@@ -766,7 +766,7 @@ git commit -m "feat: accept CNAME in DNS_QUERY_TYPE client config"
 - Consumes: Task 4 `cfg.DNSQueryType`.
 - Produces: `func (c *Client) pickTunnelQueryType() uint16` — `TXT`→16, `NS`→2, `CNAME`→5, `ROTATE`→uniform random 16/2/5 (`math/rand`), empty/unknown (defensive, incl. nil-`c` fields) →16. All other callers unchanged (`buildTunnelQuestionBytes(Prepared)` already route through the picker).
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 In `internal/client/tunnel_query_test.go`:
 1. Update `TestPickTunnelQueryTypeRotateMix` to require all three types (rename body; keep the function name and map-based shape):
@@ -812,12 +812,12 @@ func TestBuildTunnelQuestionBytesUsesCNAMEMode(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `go test ./internal/client/ -run 'TestPickTunnelQueryType|TestBuildTunnelQuestionBytesUses' -v`
 Expected: FAIL — `TestPickTunnelQueryTypeCNAMEMode` picks TXT; `TestPickTunnelQueryTypeRotateMix` never sees CNAME; `TestBuildTunnelQuestionBytesUsesCNAMEMode` gets qtype TXT.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 In `internal/client/tunnel_query.go`, replace `pickTunnelQueryType` (comment + body):
 ```go
@@ -852,7 +852,7 @@ func (c *Client) pickTunnelQueryType() uint16 {
 }
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `go test ./internal/client/ -run 'TestPickTunnelQueryType|TestBuildTunnelQuestionBytesUses' -v`
 Expected: PASS.
@@ -861,7 +861,7 @@ Then full client regression:
 Run: `go test ./internal/client/`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add internal/client/tunnel_query.go internal/client/tunnel_query_test.go
@@ -880,7 +880,7 @@ git commit -m "feat: per-query tunnel DNS type selection (TXT/NS/CNAME/ROTATE)"
 
 **Purpose:** prove the server ingress path (matcher accepts CNAME → MTU handler builds a chained CNAME response → client-side extractor recovers the payload) end to end.
 
-- [ ] **Step 1: Write the test**
+- [x] **Step 1: Write the test**
 
 Create `internal/udpserver/cname_tunnel_test.go`:
 
@@ -981,12 +981,12 @@ func TestCNAMETunnelQueryAcceptedEndToEnd(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run test to verify it passes (new behavior)**
+- [x] **Step 2: Run test to verify it passes (new behavior)**
 
 Run: `go test ./internal/udpserver/ -run TestCNAMETunnelQueryAcceptedEndToEnd -v`
 Expected: PASS (this task is the integration gate; if it fails, debug per systematic-debugging — most likely a framing mismatch caught only by cross-package use).
 
-- [ ] **Step 3: Full verification**
+- [x] **Step 3: Full verification**
 
 Run:
 ```bash
@@ -997,11 +997,11 @@ go test -race ./internal/dnsparser/ ./internal/domainmatcher/ ./internal/config/
 ```
 Expected: all PASS.
 
-- [ ] **Step 4: Manual smoke (optional, environment permitting)**
+- [x] **Step 4: Manual smoke (optional, environment permitting)**
 
 `go run scripts/bench/bench.go` runs a local server+client; do one TXT run (regression). For a CNAME smoke, temporarily set `DNS_QUERY_TYPE = "CNAME"` in the bench's client config before running — confirm throughput > 0 and the logs show no `ErrTXTAnswerMissing` storms. Not required for merge.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add internal/udpserver/cname_tunnel_test.go
