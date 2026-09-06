@@ -10,6 +10,8 @@ import (
 	"encoding/binary"
 	"errors"
 	"strings"
+
+	Enums "stormdns-go/internal/enums"
 )
 
 var (
@@ -49,12 +51,13 @@ type Question struct {
 }
 
 type ResourceRecord struct {
-	Name  string
-	Type  uint16
-	Class uint16
-	TTL   uint32
-	RDLen uint16
-	RData []byte
+	Name      string
+	Type      uint16
+	Class     uint16
+	TTL       uint32
+	RDLen     uint16
+	RData     []byte
+	RDataName string // decoded rdata name for name-type records (NS); "" when n/a or undecodable
 }
 
 type Packet struct {
@@ -239,6 +242,16 @@ func parseResourceRecords(data []byte, offset int, count int) ([]ResourceRecord,
 			TTL:   ttl,
 			RDLen: rdLen,
 			RData: data[offset:end],
+		}
+
+		// NS rdata is a domain name (possibly a compression pointer). Decode it
+		// so tunnel payloads carried in nameserver names can be read. A decode
+		// failure (or a name that overruns rdLen) leaves RDataName empty and
+		// never fails the whole packet parse.
+		if rType == Enums.DNS_RECORD_TYPE_NS {
+			if nameText, nameNext, nameErr := parseName(data, offset); nameErr == nil && nameNext <= end {
+				records[i].RDataName = nameText
+			}
 		}
 		offset = end
 	}
