@@ -205,7 +205,8 @@ BASE_ENCODE_DATA = false
 # DNS record type used for tunnel queries.
 #   "TXT"    - default, works with every server version
 #   "NS"     - tunnel over NS queries/answers; use when the resolver path blocks TXT
-#   "ROTATE" - random TXT/NS mix per query (disguise); requires a matching server
+#   "CNAME"  - tunnel over CNAME query/answer chains; the most web-like query shape
+#   "ROTATE" - random TXT/NS/CNAME mix per query (disguise); requires a matching server
 DNS_QUERY_TYPE = "TXT"
 
 # ------------------------------------------------------------------------------

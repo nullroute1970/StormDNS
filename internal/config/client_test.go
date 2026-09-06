@@ -474,3 +474,15 @@ DOMAINS = ["v.domain.com"]
 		t.Fatal("expected error for invalid DNS_QUERY_TYPE, got nil")
 	}
 }
+
+func TestClientConfigDNSQueryTypeNormalizesCNAME(t *testing.T) {
+	cfg := writeClientConfigForTest(t, `
+DNS_QUERY_TYPE = "cname"
+DATA_ENCRYPTION_METHOD = 1
+ENCRYPTION_KEY = "secret"
+DOMAINS = ["v.domain.com"]
+`)
+	if cfg.DNSQueryType != "CNAME" {
+		t.Fatalf("DNSQueryType = %q, want %q", cfg.DNSQueryType, "CNAME")
+	}
+}
