@@ -33,6 +33,10 @@ const (
 	maxDNSLabelLen      = 63
 	maxTXTAnswerPayload = 255
 	maxTXTEncodedChunk  = 191
+	// NS answers carry payload units as domain names: lowercase-base36(unit)
+	// split into <=63-char labels. maxNSNameChars keeps the wire name <= 255
+	// bytes for the worst-case 4-label split (63+63+62+62 => 250+4+1 = 255).
+	maxNSNameChars = 250
 )
 
 func BuildTXTQuestionPacket(name string, qType uint16, ednsUDPSize uint16) ([]byte, error) {
@@ -269,6 +273,10 @@ func BuildVPNResponsePacket(questionPacket []byte, answerName string, packet Vpn
 		return nil, err
 	}
 
+	if questionTypeIsNS(questionPacket) {
+		return buildNSVPNResponse(questionPacket, answerName, rawFrame)
+	}
+
 	maxChunk := maxTXTAnswerPayload
 	if baseEncode {
 		maxChunk = maxTXTEncodedChunk
@@ -283,6 +291,204 @@ func BuildVPNResponsePacket(questionPacket []byte, answerName string, packet Vpn
 	}
 
 	return BuildTXTResponsePacket(questionPacket, answerName, answerPayloads)
+}
+
+// maxNSUnitBytes returns the largest raw chunk size whose base36 text fits in
+// maxNSNameChars (~161 bytes).
+func maxNSUnitBytes() int {
+	for n := 255; n > 0; n-- {
+		if baseCodec.EncodedLenLowerBase36(n) <= maxNSNameChars {
+			return n
+		}
+	}
+	return 0
+}
+
+// buildNSAnswerName encodes one payload unit as an NS rdata wire name:
+// lowercase-base36 text split into <=63-char labels.
+func buildNSAnswerName(chunk []byte) ([]byte, error) {
+	text := baseCodec.EncodeLowerBase36(chunk)
+	if len(text) > maxNSNameChars {
+		return nil, ErrTXTAnswerTooLarge
+	}
+	return encodeDNSNameStrict(EncodeDataToLabels(text))
+}
+
+// buildNSAnswerChunks splits rawFrame into chunk units with the same byte
+// layout as the TXT chunker (chunk 0: [0x00][total][vpn header][payload...],
+// chunk N: [id][payload...]) and returns one rdata wire name per unit.
+func buildNSAnswerChunks(rawFrame []byte) ([][]byte, error) {
+	if len(rawFrame) == 0 {
+		return [][]byte{{0}}, nil // root-name placeholder; real frames are never empty
+	}
+
+	header, err := VpnProto.Parse(rawFrame)
+	if err != nil {
+		return nil, err
+	}
+
+	headerLen := header.HeaderLength
+	maxUnit := maxNSUnitBytes()
+	maxChunk0Data := max(maxUnit-2-headerLen, 0)
+	remaining := len(header.Payload) - maxChunk0Data
+	maxChunkNData := maxUnit - 1
+	totalChunks := 1
+	if remaining > 0 {
+		totalChunks += (remaining + maxChunkNData - 1) / maxChunkNData
+	}
+	if totalChunks > 255 {
+		return nil, ErrTXTAnswerTooLarge
+	}
+
+	chunk0DataLen := min(maxChunk0Data, len(header.Payload))
+	rawChunk0 := make([]byte, 2+headerLen+chunk0DataLen)
+	rawChunk0[0] = 0x00
+	rawChunk0[1] = byte(totalChunks)
+	copy(rawChunk0[2:], rawFrame[:headerLen])
+	copy(rawChunk0[2+headerLen:], header.Payload[:chunk0DataLen])
+
+	chunks := make([][]byte, 0, totalChunks)
+	name0, err := buildNSAnswerName(rawChunk0)
+	if err != nil {
+		return nil, err
+	}
+	chunks = append(chunks, name0)
+
+	cursor := chunk0DataLen
+	for chunkID := 1; cursor < len(header.Payload); chunkID++ {
+		end := min(cursor+maxChunkNData, len(header.Payload))
+		rawChunk := make([]byte, 1+end-cursor)
+		rawChunk[0] = byte(chunkID)
+		copy(rawChunk[1:], header.Payload[cursor:end])
+		name, err := buildNSAnswerName(rawChunk)
+		if err != nil {
+			return nil, err
+		}
+		chunks = append(chunks, name)
+		cursor = end
+	}
+	return chunks, nil
+}
+
+// questionTypeIsNS reports whether the packet's first question asks for NS.
+func questionTypeIsNS(questionPacket []byte) bool {
+	lite, err := ParsePacketLite(questionPacket)
+	return err == nil && lite.HasQuestion && lite.FirstQuestion.Type == Enums.DNS_RECORD_TYPE_NS
+}
+
+// buildNSVPNResponse builds a single-answer or multi-answer NS response whose
+// rdata names carry rawFrame (single) or its chunk units (multi).
+func buildNSVPNResponse(questionPacket []byte, answerName string, rawFrame []byte) ([]byte, error) {
+	if len(rawFrame) <= maxNSUnitBytes() {
+		name, err := buildNSAnswerName(rawFrame)
+		if err != nil {
+			return nil, err
+		}
+		return buildSingleNSResponsePacket(questionPacket, answerName, name)
+	}
+
+	answerNames, err := buildNSAnswerChunks(rawFrame)
+	if err != nil {
+		return nil, err
+	}
+	return BuildNSResponsePacket(questionPacket, answerName, answerNames)
+}
+
+func buildSingleNSResponsePacket(questionPacket []byte, answerName string, answerNameWire []byte) ([]byte, error) {
+	if len(questionPacket) < dnsHeaderSize {
+		return nil, ErrPacketTooShort
+	}
+
+	header := parseHeader(questionPacket)
+	questionBytes, questionCount, questionEndOffset := extractQuestionSection(questionPacket, header)
+	optStart, optLen := findOPTRecordRange(questionPacket, header, questionEndOffset)
+
+	nameBytes, err := responseAnswerNameBytes(questionPacket, answerName)
+	if err != nil {
+		return nil, err
+	}
+
+	response := make([]byte, dnsHeaderSize+len(questionBytes)+len(nameBytes)+10+len(answerNameWire)+optLen)
+	binary.BigEndian.PutUint16(response[0:2], header.ID)
+	binary.BigEndian.PutUint16(response[2:4], buildResponseFlags(header.Flags, Enums.DNSR_CODE_NO_ERROR))
+	binary.BigEndian.PutUint16(response[4:6], questionCount)
+	binary.BigEndian.PutUint16(response[6:8], 1)
+	binary.BigEndian.PutUint16(response[8:10], 0)
+	binary.BigEndian.PutUint16(response[10:12], uint16(getARCount(optLen)))
+
+	offset := dnsHeaderSize
+	offset += copy(response[offset:], questionBytes)
+	offset += copy(response[offset:], nameBytes)
+	binary.BigEndian.PutUint16(response[offset:offset+2], Enums.DNS_RECORD_TYPE_NS)
+	binary.BigEndian.PutUint16(response[offset+2:offset+4], Enums.DNSQ_CLASS_IN)
+	binary.BigEndian.PutUint32(response[offset+4:offset+8], 0)
+	binary.BigEndian.PutUint16(response[offset+8:offset+10], uint16(len(answerNameWire)))
+	offset += 10
+	offset += copy(response[offset:], answerNameWire)
+
+	if optLen > 0 {
+		copy(response[offset:], questionPacket[optStart:optStart+optLen])
+	}
+
+	return response, nil
+}
+
+func BuildNSResponsePacket(questionPacket []byte, answerName string, answerNameWires [][]byte) ([]byte, error) {
+	if len(questionPacket) < dnsHeaderSize {
+		return nil, ErrPacketTooShort
+	}
+
+	header := parseHeader(questionPacket)
+	questionBytes, questionCount, questionEndOffset := extractQuestionSection(questionPacket, header)
+	optStart, optLen := findOPTRecordRange(questionPacket, header, questionEndOffset)
+
+	nameBytes, err := responseAnswerNameBytes(questionPacket, answerName)
+	if err != nil {
+		return nil, err
+	}
+
+	answerLen := 0
+	useAnswerNameCompression := len(answerNameWires) > 1
+	for i, answerNameWire := range answerNameWires {
+		nameLen := len(nameBytes)
+		if useAnswerNameCompression && i > 0 {
+			nameLen = 2
+		}
+		answerLen += nameLen + 10 + len(answerNameWire)
+	}
+
+	response := make([]byte, dnsHeaderSize+len(questionBytes)+answerLen+optLen)
+	binary.BigEndian.PutUint16(response[0:2], header.ID)
+	binary.BigEndian.PutUint16(response[2:4], buildResponseFlags(header.Flags, Enums.DNSR_CODE_NO_ERROR))
+	binary.BigEndian.PutUint16(response[4:6], questionCount)
+	binary.BigEndian.PutUint16(response[6:8], uint16(len(answerNameWires)))
+	binary.BigEndian.PutUint16(response[8:10], 0)
+	binary.BigEndian.PutUint16(response[10:12], uint16(getARCount(optLen)))
+
+	offset := dnsHeaderSize
+	offset += copy(response[offset:], questionBytes)
+	firstAnswerNameOffset := offset
+
+	for i, answerNameWire := range answerNameWires {
+		if useAnswerNameCompression && i > 0 && firstAnswerNameOffset <= 0x3FFF {
+			binary.BigEndian.PutUint16(response[offset:offset+2], uint16(0xC000|firstAnswerNameOffset))
+			offset += 2
+		} else {
+			offset += copy(response[offset:], nameBytes)
+		}
+		binary.BigEndian.PutUint16(response[offset:offset+2], Enums.DNS_RECORD_TYPE_NS)
+		binary.BigEndian.PutUint16(response[offset+2:offset+4], Enums.DNSQ_CLASS_IN)
+		binary.BigEndian.PutUint32(response[offset+4:offset+8], 0)
+		binary.BigEndian.PutUint16(response[offset+8:offset+10], uint16(len(answerNameWire)))
+		offset += 10
+		offset += copy(response[offset:], answerNameWire)
+	}
+
+	if optLen > 0 {
+		copy(response[offset:], questionPacket[optStart:optStart+optLen])
+	}
+
+	return response, nil
 }
 
 func buildSingleTXTResponsePacket(questionPacket []byte, answerName string, answerPayload []byte) ([]byte, error) {
@@ -355,15 +561,65 @@ func sameDNSName(a string, b string) bool {
 	return strings.EqualFold(a, b)
 }
 
+// decodeNSAnswerName decodes an NS rdata name back into the payload unit
+// bytes: label text (dots removed) is lowercase-base36.
+func decodeNSAnswerName(name string) ([]byte, error) {
+	return baseCodec.DecodeLowerBase36String(strings.ReplaceAll(name, ".", ""))
+}
+
+// extractAnswerUnits pulls tunnel payload units out of answer records. When any
+// NS answer is present, its rdata names are base36-decoded (fromNS=true) and
+// TXT answers are ignored (the server never mixes types in one response).
+// Otherwise TXT answers are returned with today's semantics (raw or base64
+// text) and fromNS=false.
+func extractAnswerUnits(parsed Packet) ([][]byte, bool) {
+	if len(parsed.Answers) == 0 {
+		return nil, false
+	}
+
+	nsUnits := make([][]byte, 0, len(parsed.Answers))
+	for _, answer := range parsed.Answers {
+		if answer.Type != Enums.DNS_RECORD_TYPE_NS || answer.RDataName == "" {
+			continue
+		}
+		decoded, err := decodeNSAnswerName(answer.RDataName)
+		if err != nil || len(decoded) == 0 {
+			continue
+		}
+		nsUnits = append(nsUnits, decoded)
+	}
+	if len(nsUnits) > 0 {
+		return nsUnits, true
+	}
+
+	units := make([][]byte, 0, len(parsed.Answers))
+	for _, answer := range parsed.Answers {
+		if answer.Type != Enums.DNS_RECORD_TYPE_TXT {
+			continue
+		}
+		raw := extractTXTBytes(answer.RData)
+		if len(raw) == 0 {
+			continue
+		}
+		units = append(units, raw)
+	}
+	return units, false
+}
+
 func ExtractVPNResponse(packet []byte, baseEncoded bool) (VpnProto.Packet, error) {
 	parsed, err := ParsePacket(packet)
 	if err != nil {
 		return VpnProto.Packet{}, err
 	}
 
-	rawAnswers := extractTXTAnswerPayloads(parsed)
+	rawAnswers, fromNS := extractAnswerUnits(parsed)
 	if len(rawAnswers) == 0 {
 		return VpnProto.Packet{}, ErrTXTAnswerMissing
+	}
+	if fromNS {
+		// NS units were already decoded from their name transport; the base64
+		// session flag applies to TXT answers only.
+		baseEncoded = false
 	}
 
 	return assembleVPNResponse(rawAnswers, baseEncoded)
@@ -589,25 +845,8 @@ func appendLengthPrefixedBase64TXT(data []byte) []byte {
 	return out
 }
 
-func extractTXTAnswerPayloads(parsed Packet) [][]byte {
-	if len(parsed.Answers) == 0 {
-		return nil
-	}
-
-	payloads := make([][]byte, 0, len(parsed.Answers))
-	for _, answer := range parsed.Answers {
-		if answer.Type != Enums.DNS_RECORD_TYPE_TXT {
-			continue
-		}
-		raw := extractTXTBytes(answer.RData)
-		if len(raw) == 0 {
-			continue
-		}
-		payloads = append(payloads, raw)
-	}
-	return payloads
-}
-
+// extractTXTBytes converts TXT rdata (one or more length-prefixed strings)
+// into the concatenated string content.
 func extractTXTBytes(rData []byte) []byte {
 	if len(rData) == 0 {
 		return nil
