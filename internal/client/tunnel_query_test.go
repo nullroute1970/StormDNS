@@ -40,15 +40,29 @@ func TestPickTunnelQueryTypeNSMode(t *testing.T) {
 	}
 }
 
+func TestPickTunnelQueryTypeCNAMEMode(t *testing.T) {
+	c := &Client{}
+	c.cfg.DNSQueryType = "CNAME"
+	if got := c.pickTunnelQueryType(); got != Enums.DNS_RECORD_TYPE_CNAME {
+		t.Fatalf("CNAME mode picked %d", got)
+	}
+}
+
 func TestPickTunnelQueryTypeRotateMix(t *testing.T) {
 	c := &Client{}
 	c.cfg.DNSQueryType = "ROTATE"
 	seen := map[uint16]bool{}
-	for i := 0; i < 200; i++ {
+	for i := 0; i < 300; i++ {
 		seen[c.pickTunnelQueryType()] = true
 	}
-	if !seen[Enums.DNS_RECORD_TYPE_TXT] || !seen[Enums.DNS_RECORD_TYPE_NS] {
-		t.Fatalf("ROTATE must produce both types, got %v", seen)
+	for _, want := range []uint16{
+		Enums.DNS_RECORD_TYPE_TXT,
+		Enums.DNS_RECORD_TYPE_NS,
+		Enums.DNS_RECORD_TYPE_CNAME,
+	} {
+		if !seen[want] {
+			t.Fatalf("ROTATE must produce type %d, got %v", want, seen)
+		}
 	}
 }
 
@@ -68,5 +82,17 @@ func TestBuildTunnelQuestionBytesUsesMode(t *testing.T) {
 	}
 	if got := questionTypeOf(t, packet); got != Enums.DNS_RECORD_TYPE_NS {
 		t.Fatalf("packet qtype = %d, want NS", got)
+	}
+}
+
+func TestBuildTunnelQuestionBytesUsesCNAMEMode(t *testing.T) {
+	c := &Client{}
+	c.cfg.DNSQueryType = "CNAME"
+	packet, err := c.buildTunnelQuestionBytes("v.example.com", []byte("abcdefgh"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := questionTypeOf(t, packet); got != Enums.DNS_RECORD_TYPE_CNAME {
+		t.Fatalf("packet qtype = %d, want CNAME", got)
 	}
 }
