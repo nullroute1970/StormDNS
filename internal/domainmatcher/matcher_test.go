@@ -103,3 +103,15 @@ func litePacketWithQuestion(name string, qtype uint16) DnsParser.LitePacket {
 		HasQuestion:   true,
 	}
 }
+
+func TestMatcherReturnsProcessForNSQuestion(t *testing.T) {
+	matcher := New([]string{"a.com", "c.b.com", "cc.com"}, 3)
+
+	decision := matcher.Match(litePacketWithQuestion("vpn-01.c.b.com", Enums.DNS_RECORD_TYPE_NS))
+	if decision.Action != ActionProcess {
+		t.Fatalf("unexpected action: got=%d want=%d", decision.Action, ActionProcess)
+	}
+	if decision.QuestionType != Enums.DNS_RECORD_TYPE_NS {
+		t.Fatalf("unexpected question type: got=%d want=%d", decision.QuestionType, Enums.DNS_RECORD_TYPE_NS)
+	}
+}
