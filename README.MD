@@ -187,6 +187,18 @@ DOMAINS = ["v.example.com"]
 
 If your DNS provider is Cloudflare, the `A` record for `ns.example.com` must be **DNS only**. It must not be proxied.
 
+**These same two records serve every tunnel query type — TXT, NS, or a ROTATE mix. No extra DNS records are needed.** Delegation is type-agnostic: queries of any type for `v.example.com` or for names beneath it (payload-carrying tunnel names are always subdomains of the tunnel domain) are referred to `ns.example.com` and reach your server. The server answers each query with the same record type it was asked for (TXT questions get TXT answers, NS questions get NS answers, all with TTL 0), so resolvers never cache tunnel traffic.
+
+`DNS_QUERY_TYPE` in the client config selects the record type used for tunnel queries:
+
+| Value | Meaning |
+| --- | --- |
+| `"TXT"` (default) | Works with every server version; the classic tunnel shape |
+| `"NS"` | Tunnel over NS queries/answers — use when a resolver or middlebox in your path drops or mangles TXT queries/answers |
+| `"ROTATE"` | Random TXT/NS mix per query, so the stream does not look like a single-type DNS tunnel |
+
+`"NS"` and `"ROTATE"` require a server running the same feature version. An older server answers NS tunnel queries with an empty response, which surfaces as repeated session-init retries — switch back to `"TXT"` if your server has not been updated.
+
 Short labels matter. A shorter domain leaves more room for payload inside the DNS query name, which is important on resolvers with tight limits.
 
 <a id="server-setup"></a>
@@ -664,6 +676,10 @@ dig @ns.example.com v.example.com A
 ```
 
 Also verify that UDP/53 is open in the server firewall and hosting-provider firewall, and that the nameserver record is not proxied.
+
+### ❓ TXT Queries Are Blocked Or Dropped
+
+If tunnel queries never get answers while normal lookups work, some resolver or middlebox in your path may block or mangle TXT queries/answers. Switch the client to NS queries (see `DNS_QUERY_TYPE` under [DNS Delegation Details](#dns-delegation-details)); the same delegation records work unchanged. `NS` mode needs a server that mirrors NS questions, so update the server first.
 
 ### 🚧 Port 53 Is Already In Use
 
