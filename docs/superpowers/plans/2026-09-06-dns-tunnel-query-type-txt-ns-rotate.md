@@ -41,7 +41,7 @@
 **Interfaces:**
 - Produces: `ResourceRecord.RDataName string` — for NS-type records whose rdata is a parseable (possibly compressed) domain name, the lowercased dotted name text; `""` otherwise (including decode failure — never a parse error).
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `internal/dnsparser/ns_test.go` (package `dnsparser`):
 
@@ -147,12 +147,12 @@ func TestParsePacketToleratesGarbageNSRData(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `go test ./internal/dnsparser/ -run TestParsePacketDecodesNSRDataName -v`
 Expected: FAIL — `RDataName` does not exist on `ResourceRecord` (compile error).
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 In `internal/dnsparser/parser.go`:
 
@@ -185,7 +185,7 @@ type ResourceRecord struct {
 		}
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `go test ./internal/dnsparser/ -run 'TestParsePacketDecodesNSRDataName|TestParsePacketLeavesRDataNameEmptyForTXT|TestParsePacketToleratesGarbageNSRData' -v`
 Expected: PASS (all 4).
@@ -193,7 +193,7 @@ Expected: PASS (all 4).
 Then run full package regression: `go test ./internal/dnsparser/`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add internal/dnsparser/parser.go internal/dnsparser/ns_test.go
@@ -219,7 +219,7 @@ git commit -m "feat: decode NS rdata names in DNS parser"
   - `func buildNSVPNResponse(questionPacket []byte, answerName string, rawFrame []byte) ([]byte, error)`
   - `BuildVPNResponsePacket` (existing, modified): NS question → NS answer; otherwise byte-identical TXT behavior.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Append to `internal/dnsparser/ns_test.go` (extend the existing import block with `"bytes"` and `VpnProto "stormdns-go/internal/vpnproto"`):
 
@@ -367,12 +367,12 @@ func splitLabels(name string) []string {
 }
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `go test ./internal/dnsparser/ -run TestBuildVPNResponsePacketMirrorsNSQuestion -v`
 Expected: FAIL — answer records are TXT (mirror not implemented).
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 In `internal/dnsparser/transport.go` (additions only; do not edit TXT function bodies):
 
@@ -592,7 +592,7 @@ Finally, branch at the top of the existing `BuildVPNResponsePacket` (after `rawF
 	}
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `go test ./internal/dnsparser/ -run 'TestBuildVPNResponsePacket' -v`
 Expected: PASS (mirror single, mirror multi-chunk, TXT regression).
@@ -600,7 +600,7 @@ Expected: PASS (mirror single, mirror multi-chunk, TXT regression).
 Then full package + downstream: `go test ./internal/dnsparser/ ./internal/udpserver/ ./internal/domainmatcher/`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add internal/dnsparser/transport.go internal/dnsparser/ns_test.go
@@ -623,7 +623,7 @@ git commit -m "feat: build NS tunnel answers mirroring question type"
   - `ExtractVPNResponse` (existing, modified): delegates to `extractAnswerUnits`; NS units skip base64 decoding.
 - Behavior notes: answers that are neither TXT nor NS, empty units, undecodable names, and no-answer packets all keep today's `ErrTXTAnswerMissing` outcome. `assembleVPNResponse` is unchanged.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Append to `internal/dnsparser/ns_test.go`:
 
@@ -687,12 +687,12 @@ Extend `ns_test.go`'s import block with `errors`, `bytes`, `baseCodec "stormdns-
 
 (If any helper above is awkward — e.g. `buildSingleNSResponsePacket` is unexported but tests live in package `dnsparser`, so it is reachable — keep tests in-package exactly as in Task 1.)
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `go test ./internal/dnsparser/ -run TestExtractVPNResponseReadsBase36NamePayload -v`
 Expected: FAIL — NS answers are ignored; error `ErrTXTAnswerMissing` or no payload (extraction not implemented).
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 In `internal/dnsparser/transport.go` (additions; modify only the body of `ExtractVPNResponse`):
 
@@ -766,7 +766,7 @@ func ExtractVPNResponse(packet []byte, baseEncoded bool) (VpnProto.Packet, error
 }
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `go test ./internal/dnsparser/ -run 'TestExtractVPNResponse|TestDecodeNSAnswerName' -v`
 Expected: PASS.
@@ -775,7 +775,7 @@ Then full regression:
 Run: `go test ./internal/dnsparser/ ./internal/client/ ./internal/udpserver/`
 Expected: PASS (client/udpserver exercise `ExtractVPNResponse` on real TXT flows).
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add internal/dnsparser/transport.go internal/dnsparser/ns_test.go
@@ -794,7 +794,7 @@ git commit -m "feat: extract tunnel payloads from NS answers"
 - Consumes: nothing new.
 - Produces: `Matcher.Match` returns `ActionProcess` for TXT **and** NS questions with valid labels; other qtypes keep `Reason: "unsupported-qtype"`.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Inspect `internal/domainmatcher/matcher_test.go` first (read it fully; it is small) to reuse its helpers (`litePacketWithQuestion`, matcher construction). Then add:
 
@@ -818,12 +818,12 @@ func TestMatchStillRejectsOtherTypes(t *testing.T) {
 
 (Adapt domain/helper names to the file's actual fixture style.)
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `go test ./internal/domainmatcher/ -run TestMatchAcceptsNSQuestion -v`
 Expected: FAIL — reason `unsupported-qtype`.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 In `internal/domainmatcher/matcher.go`, change the qtype gate:
 
@@ -840,12 +840,12 @@ In `internal/domainmatcher/matcher.go`, change the qtype gate:
 	}
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `go test ./internal/domainmatcher/ -v`
 Expected: PASS (new + all existing).
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add internal/domainmatcher/matcher.go internal/domainmatcher/matcher_test.go
@@ -865,7 +865,7 @@ git commit -m "feat: accept NS qtype as tunnel query"
 **Interfaces:**
 - Produces: `ClientConfig.DNSQueryType string` (TOML `DNS_QUERY_TYPE`), normalized uppercase in `finalizeClientConfig`: `""`/`"TXT"` → `"TXT"`, `"NS"`/`"ROTATE"` valid, anything else → error `invalid DNS_QUERY_TYPE: %q`. Default `"TXT"`.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Inspect `internal/config/client_test.go` for the existing validation test style (e.g. how it loads a config and asserts errors). Add:
 
@@ -878,12 +878,12 @@ func TestClientConfigDNSQueryTypeValidation(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `go test ./internal/config/ -run TestClientConfigDNSQueryType -v`
 Expected: FAIL — field unknown (no compile error: TOML decode ignores unknown keys, so `DNSQueryType == ""` or error missing).
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 1. Struct field (place after `BaseEncodeData`):
 ```go
@@ -907,12 +907,12 @@ Expected: FAIL — field unknown (no compile error: TOML decode ignores unknown 
 	}
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `go test ./internal/config/ -v`
 Expected: PASS.
 
-- [ ] **Step 5: Update sample config and README**
+- [x] **Step 5: Update sample config and README**
 
 In `client_config.toml.simple`, add next to `BASE_ENCODE_DATA = false` (line ~203):
 
@@ -926,7 +926,7 @@ DNS_QUERY_TYPE = "TXT"
 
 In `README.MD`, add `DNS_QUERY_TYPE` to the config-list table row that already mentions `BASE_ENCODE_DATA` (line ~408).
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add internal/config/client.go internal/config/client_test.go client_config.toml.simple README.MD
@@ -951,7 +951,7 @@ git commit -m "feat: add DNS_QUERY_TYPE client config (TXT/NS/ROTATE)"
   - Existing `(*Client).buildTunnelTXTQueryRaw` keeps its name (used by session/mtu) but delegates to the new method.
 - Exported dnsparser builders (`BuildTunnelTXTQuestionPacket*`) are unchanged — they already take a qtype parameter.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `internal/client/tunnel_query_test.go` (package `client`; use `Enums` and `DnsParser` imports; construct `&Client{}` zero values):
 
@@ -1024,12 +1024,12 @@ func TestBuildTunnelQuestionBytesUsesMode(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `go test ./internal/client/ -run 'TestPickTunnelQueryType|TestBuildTunnelQuestionBytesUsesMode' -v`
 Expected: FAIL — `pickTunnelQueryType` undefined (compile error).
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 In `internal/client/tunnel_query.go`, replace the two package-level builders with methods and add the picker (add `"math/rand"` and `"strings"` imports):
 
@@ -1072,7 +1072,7 @@ Update `buildTunnelTXTQueryRaw` in `tunnel_query.go` to call `c.buildTunnelQuest
 
 (Keep the name `buildTunnelTXTQueryRaw` — session.go and mtu.go call it; it is a client-level wrapper, not a builder of the type byte.)
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `go test ./internal/client/ -run 'TestPickTunnelQueryType|TestBuildTunnelQuestionBytesUsesMode' -v`
 Expected: PASS.
@@ -1081,7 +1081,7 @@ Then full client regression:
 Run: `go test ./internal/client/`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add internal/client/tunnel_query.go internal/client/async_runtime.go internal/client/tunnel_query_test.go
@@ -1100,7 +1100,7 @@ git commit -m "feat: per-query tunnel DNS type selection (TXT/NS/ROTATE)"
 
 **Purpose:** prove the server ingress path (matcher accepts NS → session handler builds mirrored response) end to end without a full session harness: feed an NS tunnel query through `Matcher` and `BuildVPNResponsePacket`, then decode with the client-side extractor.
 
-- [ ] **Step 1: Write the test**
+- [x] **Step 1: Write the test**
 
 Read one existing udpserver test (e.g. `session_syn_test.go` header or `dns_tunnel_cap_test.go`) for the local-server fixture style first; if a full-server harness is heavy, keep this test purely in-package with `Matcher` + `BuildVPNResponsePacket`:
 
@@ -1118,12 +1118,12 @@ package udpserver_test // or package udpserver, matching existing tests
 
 Keep the payload ≥ 200 bytes so the multi-chunk NS framing is exercised.
 
-- [ ] **Step 2: Run test to verify it passes (new behavior)**
+- [x] **Step 2: Run test to verify it passes (new behavior)**
 
 Run: `go test ./internal/udpserver/ -run TestNSTunnelQueryAcceptedEndToEnd -v`
 Expected: PASS (this task is the integration gate; if it fails, fix per systematic-debugging — most likely a framing mismatch caught earlier only by cross-package use).
 
-- [ ] **Step 3: Full verification**
+- [x] **Step 3: Full verification**
 
 Run:
 ```bash
@@ -1134,11 +1134,11 @@ go test -race ./internal/dnsparser/ ./internal/domainmatcher/ ./internal/config/
 ```
 Expected: all PASS.
 
-- [ ] **Step 4: Manual smoke (optional, environment permitting)**
+- [x] **Step 4: Manual smoke (optional, environment permitting)**
 
 `go run scripts/bench/bench.go` runs a local server+client; do one TXT run (regression). For an NS smoke, temporarily set `DNS_QUERY_TYPE = "NS"` in the bench's client config before running — confirm throughput > 0 and the logs show no `ErrTXTAnswerMissing` storms. Not required for merge.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add internal/udpserver/ns_tunnel_test.go
