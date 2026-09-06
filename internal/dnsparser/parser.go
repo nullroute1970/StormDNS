@@ -57,7 +57,7 @@ type ResourceRecord struct {
 	TTL       uint32
 	RDLen     uint16
 	RData     []byte
-	RDataName string // decoded rdata name for name-type records (NS); "" when n/a or undecodable
+	RDataName string // decoded rdata name for name-type records (NS/CNAME); "" when n/a or undecodable
 }
 
 type Packet struct {
@@ -207,6 +207,12 @@ func parseQuestions(data []byte, offset int, count int) ([]Question, int, error)
 	return questions, offset, nil
 }
 
+// isNameRDataRecordType reports whether a record type carries a domain name
+// as its rdata (a wire-format name, possibly a compression pointer).
+func isNameRDataRecordType(recordType uint16) bool {
+	return recordType == Enums.DNS_RECORD_TYPE_NS || recordType == Enums.DNS_RECORD_TYPE_CNAME
+}
+
 func parseResourceRecords(data []byte, offset int, count int) ([]ResourceRecord, int, error) {
 	if count == 0 {
 		return nil, offset, nil
@@ -244,11 +250,11 @@ func parseResourceRecords(data []byte, offset int, count int) ([]ResourceRecord,
 			RData: data[offset:end],
 		}
 
-		// NS rdata is a domain name (possibly a compression pointer). Decode it
-		// so tunnel payloads carried in nameserver names can be read. A decode
-		// failure (or a name that overruns rdLen) leaves RDataName empty and
-		// never fails the whole packet parse.
-		if rType == Enums.DNS_RECORD_TYPE_NS {
+		// NS and CNAME rdata are domain names (possibly compression pointers).
+		// Decode them so tunnel payloads carried in those names can be read. A
+		// decode failure (or a name that overruns rdLen) leaves RDataName empty
+		// and never fails the whole packet parse.
+		if isNameRDataRecordType(rType) {
 			if nameText, nameNext, nameErr := parseName(data, offset); nameErr == nil && nameNext <= end {
 				records[i].RDataName = nameText
 			}
