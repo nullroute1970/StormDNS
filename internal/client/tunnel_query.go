@@ -10,6 +10,9 @@
 package client
 
 import (
+	"math/rand"
+	"strings"
+
 	DnsParser "stormdns-go/internal/dnsparser"
 	Enums "stormdns-go/internal/enums"
 	VpnProto "stormdns-go/internal/vpnproto"
@@ -20,8 +23,35 @@ type preparedTunnelDomain struct {
 	qname      []byte
 }
 
-func buildTunnelTXTQuestionBytes(domain string, encoded []byte) ([]byte, error) {
-	return DnsParser.BuildTunnelTXTQuestionPacket(domain, encoded, Enums.DNS_RECORD_TYPE_TXT, EDnsSafeUDPSize)
+// pickTunnelQueryType returns the DNS record type for the next tunnel query
+// based on the configured mode: TXT (default), NS, or ROTATE (uniform random).
+func (c *Client) pickTunnelQueryType() uint16 {
+	mode := "TXT"
+	if c != nil {
+		mode = strings.TrimSpace(c.cfg.DNSQueryType)
+		if mode == "" {
+			mode = "TXT"
+		}
+	}
+	switch mode {
+	case "NS":
+		return Enums.DNS_RECORD_TYPE_NS
+	case "ROTATE":
+		if rand.Intn(2) == 0 {
+			return Enums.DNS_RECORD_TYPE_TXT
+		}
+		return Enums.DNS_RECORD_TYPE_NS
+	default:
+		return Enums.DNS_RECORD_TYPE_TXT
+	}
+}
+
+func (c *Client) buildTunnelQuestionBytes(domain string, encoded []byte) ([]byte, error) {
+	return DnsParser.BuildTunnelTXTQuestionPacket(domain, encoded, c.pickTunnelQueryType(), EDnsSafeUDPSize)
+}
+
+func (c *Client) buildTunnelQuestionBytesPrepared(domain preparedTunnelDomain, encoded []byte) ([]byte, error) {
+	return DnsParser.BuildTunnelTXTQuestionPacketPrepared(domain.normalized, domain.qname, encoded, c.pickTunnelQueryType(), EDnsSafeUDPSize)
 }
 
 func prepareTunnelDomain(domain string) (preparedTunnelDomain, error) {
@@ -32,11 +62,6 @@ func prepareTunnelDomain(domain string) (preparedTunnelDomain, error) {
 	return preparedTunnelDomain{normalized: normalized, qname: qname}, nil
 }
 
-func buildTunnelTXTQuestionBytesPrepared(domain preparedTunnelDomain, encoded []byte) ([]byte, error) {
-	return DnsParser.BuildTunnelTXTQuestionPacketPrepared(domain.normalized, domain.qname, encoded, Enums.DNS_RECORD_TYPE_TXT, EDnsSafeUDPSize)
-}
-
-// buildTunnelTXTQueryRaw builds an encoded tunnel query using the provided options and codec.
 func (c *Client) buildTunnelTXTQueryRaw(domain string, options VpnProto.BuildOptions) ([]byte, error) {
 	raw, err := VpnProto.BuildRaw(options)
 	if err != nil {
@@ -46,7 +71,7 @@ func (c *Client) buildTunnelTXTQueryRaw(domain string, options VpnProto.BuildOpt
 	if err != nil {
 		return nil, err
 	}
-	return buildTunnelTXTQuestionBytes(domain, encoded)
+	return c.buildTunnelQuestionBytes(domain, encoded)
 }
 
 func (c *Client) buildEncodedAutoWithCompressionTrace(options VpnProto.BuildOptions) ([]byte, error) {
@@ -67,5 +92,5 @@ func (c *Client) buildTunnelTXTQuery(domain string, options VpnProto.BuildOption
 	if err != nil {
 		return nil, err
 	}
-	return buildTunnelTXTQuestionBytes(domain, encoded)
+	return c.buildTunnelQuestionBytes(domain, encoded)
 }

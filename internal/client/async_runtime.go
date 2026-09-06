@@ -548,7 +548,7 @@ func (c *Client) asyncEncodeWorker(ctx context.Context, id int) {
 				var dnsPacket []byte
 				switch {
 				case firstDNSPacket == nil:
-					dnsPacket, err = buildTunnelTXTQuestionBytesPrepared(prepared, encoded)
+					dnsPacket, err = c.buildTunnelQuestionBytesPrepared(prepared, encoded)
 					if err != nil {
 						continue
 					}
@@ -563,7 +563,7 @@ func (c *Client) asyncEncodeWorker(ctx context.Context, id int) {
 					var cached bool
 					dnsPacket, cached = packetByDomain[domain]
 					if !cached {
-						dnsPacket, err = buildTunnelTXTQuestionBytesPrepared(prepared, encoded)
+						dnsPacket, err = c.buildTunnelQuestionBytesPrepared(prepared, encoded)
 						if err != nil {
 							continue
 						}
