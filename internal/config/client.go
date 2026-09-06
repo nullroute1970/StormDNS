@@ -59,6 +59,7 @@ type ClientConfig struct {
 	AutoDisableMinObservations            int               `toml:"AUTO_DISABLE_MIN_OBSERVATIONS"`
 	AutoDisableCheckIntervalSeconds       float64           `toml:"AUTO_DISABLE_CHECK_INTERVAL_SECONDS"`
 	BaseEncodeData                        bool              `toml:"BASE_ENCODE_DATA"`
+	DNSQueryType                          string            `toml:"DNS_QUERY_TYPE"`
 	UploadCompressionType                 int               `toml:"UPLOAD_COMPRESSION_TYPE"`
 	DownloadCompressionType               int               `toml:"DOWNLOAD_COMPRESSION_TYPE"`
 	CompressionMinSize                    int               `toml:"COMPRESSION_MIN_SIZE"`
@@ -183,6 +184,7 @@ func defaultClientConfig() ClientConfig {
 		AutoDisableMinObservations:            3,
 		AutoDisableCheckIntervalSeconds:       1.0,
 		BaseEncodeData:                        false,
+		DNSQueryType:                          "TXT",
 		UploadCompressionType:                 2,
 		DownloadCompressionType:               2,
 		CompressionMinSize:                    compression.DefaultMinSize,
@@ -351,6 +353,15 @@ func finalizeClientConfig(cfg ClientConfig) (ClientConfig, error) {
 	case "TCP":
 	default:
 		return cfg, fmt.Errorf("invalid PROTOCOL_TYPE: %q", cfg.ProtocolType)
+	}
+
+	cfg.DNSQueryType = strings.ToUpper(strings.TrimSpace(cfg.DNSQueryType))
+	switch cfg.DNSQueryType {
+	case "", "TXT":
+		cfg.DNSQueryType = "TXT"
+	case "NS", "ROTATE":
+	default:
+		return cfg, fmt.Errorf("invalid DNS_QUERY_TYPE: %q", cfg.DNSQueryType)
 	}
 
 	if cfg.DataEncryptionMethod < 0 || cfg.DataEncryptionMethod > 5 {

@@ -413,3 +413,64 @@ func TestClientConfigFlagBinderBuildsOverridesForSetFlagsOnly(t *testing.T) {
 		t.Fatalf("did not expect unset flag to appear in overrides: %#v", overrides.Values["MaxUploadMTU"])
 	}
 }
+
+func writeClientConfigForTest(t *testing.T, tomlBody string) ClientConfig {
+	t.Helper()
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "client_config.toml")
+	resolversPath := filepath.Join(dir, "client_resolvers.txt")
+
+	if err := os.WriteFile(configPath, []byte(tomlBody), 0o644); err != nil {
+		t.Fatalf("WriteFile config failed: %v", err)
+	}
+	if err := os.WriteFile(resolversPath, []byte("8.8.8.8\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile resolvers failed: %v", err)
+	}
+
+	cfg, err := LoadClientConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadClientConfig returned error: %v", err)
+	}
+	return cfg
+}
+
+func TestClientConfigDNSQueryTypeDefaultsToTXT(t *testing.T) {
+	cfg := writeClientConfigForTest(t, `
+DATA_ENCRYPTION_METHOD = 1
+ENCRYPTION_KEY = "secret"
+DOMAINS = ["v.domain.com"]
+`)
+	if cfg.DNSQueryType != "TXT" {
+		t.Fatalf("default DNSQueryType = %q, want %q", cfg.DNSQueryType, "TXT")
+	}
+}
+
+func TestClientConfigDNSQueryTypeNormalizesNS(t *testing.T) {
+	cfg := writeClientConfigForTest(t, `
+DNS_QUERY_TYPE = "ns"
+DATA_ENCRYPTION_METHOD = 1
+ENCRYPTION_KEY = "secret"
+DOMAINS = ["v.domain.com"]
+`)
+	if cfg.DNSQueryType != "NS" {
+		t.Fatalf("DNSQueryType = %q, want %q", cfg.DNSQueryType, "NS")
+	}
+}
+
+func TestClientConfigRejectsInvalidDNSQueryType(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "client_config.toml")
+	if err := os.WriteFile(configPath, []byte(`
+DNS_QUERY_TYPE = "A"
+DATA_ENCRYPTION_METHOD = 1
+ENCRYPTION_KEY = "secret"
+DOMAINS = ["v.domain.com"]
+`), 0o644); err != nil {
+		t.Fatalf("WriteFile config failed: %v", err)
+	}
+
+	_, err := LoadClientConfig(configPath)
+	if err == nil {
+		t.Fatal("expected error for invalid DNS_QUERY_TYPE, got nil")
+	}
+}
