@@ -115,3 +115,15 @@ func TestMatcherReturnsProcessForNSQuestion(t *testing.T) {
 		t.Fatalf("unexpected question type: got=%d want=%d", decision.QuestionType, Enums.DNS_RECORD_TYPE_NS)
 	}
 }
+
+func TestMatcherReturnsProcessForCNAMEQuestion(t *testing.T) {
+	matcher := New([]string{"a.com", "c.b.com", "cc.com"}, 3)
+
+	decision := matcher.Match(litePacketWithQuestion("vpn-01.c.b.com", Enums.DNS_RECORD_TYPE_CNAME))
+	if decision.Action != ActionProcess {
+		t.Fatalf("unexpected action: got=%d want=%d", decision.Action, ActionProcess)
+	}
+	if decision.QuestionType != Enums.DNS_RECORD_TYPE_CNAME {
+		t.Fatalf("unexpected question type: got=%d want=%d", decision.QuestionType, Enums.DNS_RECORD_TYPE_CNAME)
+	}
+}
