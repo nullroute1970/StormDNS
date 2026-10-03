@@ -40,7 +40,7 @@ StormDNS یک سیستم تونل client/server است که ترافیک TCP ر�
 
 | بخش | لینک |
 | --- | --- |
-| 🚀 اولین راه‌اندازی | [شروع سریع](#quick-start)، [راه‌اندازی سرور](#server-setup)، [راه‌اندازی کلاینت](#client-setup) |
+| 🚀 اولین راه‌اندازی | [شروع سریع](#quick-start)، [راه‌اندازی سرور](#server-setup)، [راه اندازی کانتینر](#container-setup)، [راه‌اندازی کلاینت](#client-setup) |
 | 🌐 نیازمندی DNS/domain | [نیازمندی‌های شبکه و دامنه](#network-and-domain-requirements) |
 | ⚙️ تنظیمات | [نمای کلی config](#configuration-overview)، [keyهای config فعلی](#current-config-keys) |
 | 📡 تنظیم resolver و MTU | [تنظیم Resolver، MTU و Loss](#resolver-mtu-and-loss-tuning) |
@@ -258,6 +258,50 @@ flagهای کاربردی سرور:
 
 ```bash
 ./StormDNS_Server_Linux_AMD64 --config server_config.toml --udp-port 5353 --log-level DEBUG
+```
+
+<a id="container-setup"></a>
+
+## راه‌اندازی کانتینر
+
+این کانتینر ایمیج، StormDNS را در محیط کانتینری اجرا می‌کند و از معماری چندسکویی پشتیبانی می‌کند.
+
+این ایمیج به‌صورت خودکار:
+
+- اگر هیچ پیکربندی‌ای وجود نداشته باشد، یک پیکربندی پیش‌فرض راه‌اندازی می‌کند.
+- در اولین اجرا دامنه‌ی شما را وارد می‌کند.
+- داده‌های پایدار را در مسیر data/ ذخیره می‌کند.
+
+معماری های پشتیبانی شده:
+
+- linux/amd64
+- linux/arm64
+- linux/arm/v7
+
+### پادمن
+
+```bash
+podman run -d \
+  --name stormdns \
+  --restart unless-stopped \
+  -e DOMAIN=v.example.com \
+  -v $(pwd)/data:/data:Z \
+  -p 53:53/tcp \
+  -p 53:53/udp \
+  ghcr.io/nullroute1970/stormdns:latest
+```
+
+### 🐳 داکر
+
+```bash
+docker run -d \
+  --name stormdns \
+  --restart unless-stopped \
+  -e DOMAIN=v.example.com \
+  -v $(pwd)/data:/data \
+  -p 53:53/tcp \
+  -p 53:53/udp \
+  ghcr.io/nullroute1970/stormdns:latest
 ```
 
 <a id="client-setup"></a>

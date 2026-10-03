@@ -1,0 +1,106 @@
+FROM alpine:3.23 AS downloader
+
+ARG TARGETARCH
+ARG TARGETVARIANT
+ARG RELEASE_TAG=latest
+ARG RELEASE_SHA256=
+
+# Install packages
+RUN apk update && \
+    apk add --no-cache curl unzip && \
+    rm -rf /var/cache/apk/*
+
+WORKDIR /out
+
+RUN set -eux; \
+  echo "TARGETARCH=${TARGETARCH}"; \
+  echo "TARGETVARIANT=${TARGETVARIANT}"; \
+  case "${TARGETARCH}" in \
+    amd64) \
+      ARTIFACT="StormDNS_Server_Linux_AMD64.zip"; \
+      PREFIX="StormDNS_Server_Linux_AMD64" ;; \
+\
+    arm64) \
+      ARTIFACT="StormDNS_Server_Linux_ARM64.zip"; \
+      PREFIX="StormDNS_Server_Linux_ARM64" ;; \
+\
+    arm) \
+      case "${TARGETVARIANT}" in \
+        v5) \
+          ARTIFACT="StormDNS_Server_Linux_ARMV5.zip"; \
+          PREFIX="StormDNS_Server_Linux_ARMV5" ;; \
+\
+        v6) \
+          ARTIFACT="StormDNS_Server_Linux_ARMV6.zip"; \
+          PREFIX="StormDNS_Server_Linux_ARMV6" ;; \
+\
+        v7|"") \
+          ARTIFACT="StormDNS_Server_Linux_ARMV7.zip"; \
+          PREFIX="StormDNS_Server_Linux_ARMV7" ;; \
+\
+        *) \
+          echo "Unsupported ARM variant: ${TARGETVARIANT}" >&2; \
+          exit 1 ;; \
+      esac ;; \
+\
+    mips) \
+      ARTIFACT="StormDNS_Server_Linux_MIPS.zip"; \
+      PREFIX="StormDNS_Server_Linux_MIPS" ;; \
+\
+    mips64) \
+      ARTIFACT="StormDNS_Server_Linux_MIPS64.zip"; \
+      PREFIX="StormDNS_Server_Linux_MIPS64" ;; \
+\
+    mips64le) \
+      ARTIFACT="StormDNS_Server_Linux_MIPS64LE.zip"; \
+      PREFIX="StormDNS_Server_Linux_MIPS64LE" ;; \
+\
+    mipsle) \
+      ARTIFACT="StormDNS_Server_Linux_MIPSLE.zip"; \
+      PREFIX="StormDNS_Server_Linux_MIPSLE" ;; \
+\
+    *) \
+      echo "Unsupported TARGETARCH=${TARGETARCH}" >&2; \
+      exit 1 ;; \
+  esac; \
+  curl -fsSL --retry 3 --retry-delay 2 -o /tmp/stormdns.zip \
+  "https://github.com/nullroute1970/StormDNS/releases/${RELEASE_TAG}/download/${ARTIFACT}"; \
+  if [ -n "${RELEASE_SHA256}" ]; then \
+  echo "${RELEASE_SHA256}  /tmp/stormdns.zip" | sha256sum -c -; \
+  fi; \
+  unzip -q /tmp/stormdns.zip -d /out; \
+  rm -f /tmp/stormdns.zip; \
+  BIN="$(find /out -type f -name "${PREFIX}_v*" | sort -V | tail -n1)"; \
+  if [ -z "${BIN}" ]; then echo "Could not find extracted binary for ${PREFIX}" >&2; exit 1; fi; \
+  mv "${BIN}" /out/stormdns; \
+  chmod 0755 /out/stormdns; \
+  find /out -type f ! -path /out/stormdns -delete
+
+FROM alpine:3.23
+
+LABEL org.opencontainers.image.source=https://github.com/nullroute1970/StormDNS
+
+ENV APP_DIR=/opt/stormdns \
+    DATA_DIR=/data \
+    CONFIG_FILE=server_config.toml \
+    KEY_FILE=encrypt_key.txt
+
+# Install packages
+RUN apk update && \
+    apk add --no-cache curl tini bash && \
+    rm -rf /var/cache/apk/* && \
+    mkdir -p /opt/stormdns /data
+
+COPY --from=downloader /out/stormdns /opt/stormdns/stormdns
+COPY entrypoint.sh /usr/local/bin/entrypoint.sh
+
+RUN chmod 0755 /opt/stormdns/stormdns /usr/local/bin/entrypoint.sh
+
+WORKDIR /opt/stormdns
+
+EXPOSE 53/tcp 53/udp
+
+VOLUME ["/data"]
+
+ENTRYPOINT ["/sbin/tini", "--", "/usr/local/bin/entrypoint.sh"]
+CMD []
